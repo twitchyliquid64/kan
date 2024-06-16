@@ -1,7 +1,7 @@
 use num_traits::float::Float;
-use smallvec::{smallvec, SmallVec};
+use splines::{Interpolate, Interpolation, Key, Spline};
 
-const DEFAULT_MAX_GRIDS: usize = 6;
+const POW_DOMAIN: i32 = 10;
 
 #[macro_export]
 macro_rules! assert_near {
@@ -17,84 +17,62 @@ right: {:?}: {}", $left, $right, format_args!($($arg)+))
     };
 }
 
-/// Spline implements quadratic interpolation between a series of control points,
+/// S implements interpolation between a series of control points,
 /// defined in input/parameter space (denoted `t`) and output space (denoted `y`).
 ///
 /// An empty spline is considered invalid and may result in panics.
 #[derive(Debug, Clone)]
-pub struct Spline<V: Float = f32, const M: usize = DEFAULT_MAX_GRIDS> {
-    /// cp_t describes the t value of the ith control point.
-    /// The control points relevant to computing a curve are the ith control point,
-    /// the previous control point, and the subsequent control point.
-    ///
-    /// Values of cp_t must always be ascending.
-    cp_t: SmallVec<[V; M]>,
-
-    /// cp_y describes the output value of the ith control point.
-    cp_y: SmallVec<[V; M]>,
+pub struct S<V: Interpolate<V> + Float = f32> {
+    s: Spline<V, V>,
 }
 
-impl<V: Float + std::fmt::Debug, const M: usize> Spline<V, M> {
+impl<V: Float + std::fmt::Debug + Interpolate<V> + splines::interpolate::Interpolator> S<V> {
+    /// identity returns a spline where the output value is the same as the input value.
+    ///
+    /// To keep numeric stability, this is defined over the domain -2^POW_DOMAIN~2^POW_DOMAIN.
     pub fn identity() -> Self {
-        let max = V::one();// (V::one() + V::one()).powi(2); // 2^2
+        let max = (V::one() + V::one()).powi(POW_DOMAIN); // 2^10
+
+        let start = Key::new(-max, -max, Interpolation::Bezier(V::zero()));
+        let end = Key::new(max, max, Interpolation::Linear);
 
         Self {
-            cp_t: smallvec![-max, V::zero(), max],
-            cp_y: smallvec![-max, V::zero(), max],
+            s: Spline::from_vec(vec![start, end]),
         }
     }
 
-    /// returns the index of the control point preceeding the given
-    /// value in input space, if any.
-    pub(crate) fn ith_floor(&self, t: V) -> Option<usize> {
-        self.cp_t.iter().rposition(|cp_t| *cp_t <= t)
+    /// non_linear returns a spline with non-linear input to output characteristics.
+    ///
+    /// To keep numeric stability, this is defined over the domain -2^POW_DOMAIN~2^POW_DOMAIN.
+    pub fn non_linear() -> Self {
+        let two = V::one() + V::one();
+        let max = two.powi(POW_DOMAIN); // 2^10
+
+        let start = Key::new(-max, -max, Interpolation::Bezier(-two.powi(POW_DOMAIN - 1)));
+        let end = Key::new(max, max, Interpolation::Linear);
+
+        Self {
+            s: Spline::from_vec(vec![start, end]),
+        }
     }
 
     /// computes the output value of the spline for the given input.
     pub fn eval(&self, t: V) -> V {
-        println!();
-        let reciprocal_or_zero = |v: V| {
-            if !v.is_normal() || v.abs() <= (V::epsilon() + V::epsilon()) {
-                V::zero()
-            } else {
-                V::one() / v
+        self.s.clamped_sample(t).unwrap()
+    }
+
+    /// invert flips the sign of the parameter space.
+    ///
+    /// For instance, an identity function would become a negation function.
+    pub fn invert(&mut self) {
+        self.s = Spline::from_iter(self.s.into_iter().map(|k| {
+            let mut k = *k;
+            k.t = k.t.neg();
+            if let Interpolation::Bezier(v) = &mut k.interpolation {
+                *v = v.neg();
             }
-        };
-
-        let i = self.ith_floor(t);
-        match i {
-            // NOTE: clamping when out of bounds
-            None => self.cp_y[0],
-            Some(i) => {
-                let t_center = self.cp_t[i];
-                let y_center = self.cp_y[i];
-
-                let (t_prev, y_prev) = if i == 0 {
-                    (t_center, y_center)
-                } else {
-                    (self.cp_t[i - 1], self.cp_y[i - 1])
-                };
-                let (t_next, y_next) = if i == self.cp_t.len() - 1 {
-                    (t_center, y_center)
-                } else {
-                    (self.cp_t[i + 1], self.cp_y[i + 1])
-                };
-
-                println!("t: ({:?}, {:?}, {:?}) - {:?}", t_prev, t_center, t_next, t);
-
-                let b_prev = (t - t_center).powi(2)
-                    * reciprocal_or_zero((t_prev - t_center) * (t_prev - t_next));
-                let b_center = ((t - t_prev) * (t - t_next))
-                    * reciprocal_or_zero((t_center - t_prev) * (t_center - t_next));
-                let b_next = (t - t_center).powi(2)
-                    * reciprocal_or_zero((t_next - t_center) * (t_next - t_prev + V::one()));
-
-                println!("b: ({:?}, {:?}, {:?})", b_prev, b_center, b_next);
-                println!("y: ({:?}, {:?}, {:?})", y_prev, self.cp_y[i], y_next);
-
-                (y_prev * b_prev) + (y_center * b_center) + (y_next * b_next)
-            }
-        }
+            k
+        }));
     }
 }
 
@@ -102,23 +80,51 @@ impl<V: Float + std::fmt::Debug, const M: usize> Spline<V, M> {
 mod tests {
     use super::*;
 
-    const TEST_TOLERANCE: f32 = 1.0e-6;
-
-    #[test]
-    fn ith_floor() {
-        let spline = Spline::<f32>::identity();
-        assert_eq!(spline.ith_floor(0.0), Some(1));
-        assert_eq!(spline.ith_floor(-0.1), Some(0));
-        assert_eq!(spline.ith_floor(0.1), Some(1));
-    }
+    const TEST_TOLERANCE: f32 = 1.0e-5;
 
     #[test]
     fn eval_identity_zero() {
-        assert_near!(Spline::<f32>::identity().eval(0.0), 0.0);
+        assert_near!(S::<f32>::identity().eval(0.0), 0.0);
+        assert_near!(S::<f32>::identity().eval(-0.0), -0.0);
     }
 
     #[test]
     fn eval_identity_one() {
-        assert_near!(Spline::<f32>::identity().eval(1.0), 1.0);
+        assert_near!(S::<f32>::identity().eval(1.0), 1.0);
+        assert_near!(S::<f32>::identity().eval(-1.0), -1.0);
+    }
+
+    #[test]
+    fn eval_identity_five() {
+        assert_near!(S::<f32>::identity().eval(5.0), 5.0);
+        assert_near!(S::<f32>::identity().eval(-5.0), -5.0);
+    }
+
+    #[test]
+    fn eval_identity_clamped() {
+        assert_near!(S::<f32>::identity().eval(5000.0), 1024.0);
+        assert_near!(S::<f32>::identity().eval(-5000.0), -1024.0);
+    }
+
+    #[test]
+    fn eval_non_linear() {
+        let mut s = S::<f32>::non_linear();
+        assert_near!(s.eval(0.0), -256.0);
+        assert_near!(s.eval(256.0), 16.0);
+        assert_near!(s.eval(512.0), 320.0);
+        s.invert();
+        assert_near!(s.eval(0.0), 0.);
+        assert_near!(s.eval(256.0), -256.0);
+        assert_near!(s.eval(512.0), -512.0);
+    }
+
+    #[test]
+    fn invert_identity() {
+        let mut s = S::<f32>::identity();
+        assert_near!(s.eval(1.0), 1.0);
+        s.invert();
+        assert_near!(s.eval(-1.0), 1.0);
+        assert_near!(s.eval(1.0), -1.0);
+        assert_near!(s.eval(3.5), -3.5);
     }
 }
