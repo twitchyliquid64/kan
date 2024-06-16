@@ -13,10 +13,9 @@ viz = {version = "0.1.0", path = "./crates/viz"}
 plotters = "0.3.6"
 
 num-traits = "0.2"
-splines = "4.3"
+smallvec = {version = "1.13", features = ["union", "const_generics", "const_new"]}
 
 serde = { version = "1", features = ["derive", "rc"] }
 serde_cbor = "0.11"
 kurbo = "0.11"
 
-# smallvec = {version = "1.13", features = ["union", "const_generics", "const_new"]}

@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 plotters.workspace = true
+uvf.workspace = true
