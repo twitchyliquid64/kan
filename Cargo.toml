@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/uvf", "crates/viz"]
+resolver = "2"
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+
+[workspace.dependencies]
+uvf = {version = "0.1.0", path = "./crates/uvf"}
+viz = {version = "0.1.0", path = "./crates/viz"}
+
+plotters = "0.3.6"
+num-traits = "0.2"
+smallvec = {version = "1.13", features = ["union", "const_generics", "const_new"]}
+splines = "4.3"
+
+serde = { version = "1", features = ["derive", "rc"] }
+serde_cbor = "0.11"
+kurbo = "0.11"
