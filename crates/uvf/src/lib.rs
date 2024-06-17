@@ -29,15 +29,14 @@ fn normalize<V: Float>(p: V, min: V, max: V) -> V {
 /// An empty spline is considered invalid and may result in panics.
 #[derive(Debug, Clone)]
 pub struct S<V: Float = f32, const M: usize = DEFAULT_MAX_GRIDS> {
-    /// cp_t describes the t value of the ith control point.
-    /// The control points relevant to computing a curve are the ith control point,
-    /// the previous control point, and the subsequent control point.
+    /// lower_t describes the lower t value of the ith interval.
     ///
     /// Values of cp_t must always be ascending.
+    lower_t: SmallVec<[V; M]>,
+    /// lower_y describes the lower value of the ith interval.
+    lower_y: SmallVec<[V; M]>,
+    /// cp_t describes the control point of the ith interval.
     cp_t: SmallVec<[V; M]>,
-
-    /// cp_y describes the output value of the ith control point.
-    cp_y: SmallVec<[V; M]>,
 }
 
 impl<V: Float + std::fmt::Debug> S<V> {
@@ -50,15 +49,15 @@ impl<V: Float + std::fmt::Debug> S<V> {
         let mid = max.div(two);
 
         Self {
-            cp_t: smallvec![-max, -mid, V::zero(), mid, max],
-            cp_y: smallvec![-max, -mid, V::zero(), mid, max],
+            lower_t: smallvec![-max, V::zero(), max],
+            lower_y: smallvec![-max, V::zero(), max],
+            cp_t: smallvec![-mid, mid],
         }
     }
 
     /// returns the index of the control point preceeding the given
-    /// value in input space, if any.
     pub(crate) fn ith_floor(&self, t: V) -> Option<usize> {
-        self.cp_t.iter().rposition(|cp_t| *cp_t <= t)
+        self.lower_t.iter().rposition(|lower_t| *lower_t <= t)
     }
 
     /// computes the output value of the spline for the given input.
@@ -66,26 +65,27 @@ impl<V: Float + std::fmt::Debug> S<V> {
         let i = self.ith_floor(t);
         match i {
             // NOTE: clamping when out of bounds
-            None => self.cp_y[0],
+            None => self.lower_y[0],
             Some(i) => {
-                let n = self.cp_t.len() - 1;
-                let (t0, y0) = (self.cp_t[i], self.cp_y[i]);
-                let (tc, yc) = if i + 1 <= n {
-                    (self.cp_t[i + 1], self.cp_y[i + 1])
+                let n = self.lower_t.len() - 1;
+                let (t0, y0) = (self.lower_t[i], self.lower_y[i]);
+                let (t1, y1) = if i + 1 <= n {
+                    (self.lower_t[i + 1], self.lower_y[i + 1])
                 } else {
                     return y0; // NOTE: clamping when out of bounds
                 };
-                let (t1, y1) = if i + 2 <= n {
-                    (self.cp_t[i + 2], self.cp_y[i + 2])
-                } else {
-                    (tc, yc)
-                };
+
+                let yc = self.cp_t[i];
 
                 let t = normalize(t, t0, t1);
-                // println!(
-                //     "[{:?}]\n T:\t{:?} => {:?} => {:?}\tnorm: {:?}\n Y:\t{:?} => {:?} => {:?}",
-                //     i, t0, tc, t1, t, y0, yc, y1
-                // );
+                println!(
+                    "[{:?}]\n T:\t{:?} => {:?}\tnorm: {:?}\n Y:\t{:?} => {:?} => {:?}",
+                    i, t0, t1, t, y0, yc, y1
+                );
+
+                // let lerp1 = y0 + (yc - y0) * t;
+                // let lerp2 = yc + (y1 - yc) * t;
+                // lerp1 + (lerp2 - lerp1) * t
 
                 let one_t = V::one() - t;
                 let one_t2 = one_t * one_t;
@@ -97,7 +97,12 @@ impl<V: Float + std::fmt::Debug> S<V> {
 
     /// The parameter space this function is defined for
     pub fn t_domain(&self) -> (V, V) {
-        (self.cp_t[0], self.cp_t[self.cp_t.len() - 1])
+        (self.lower_t[0], self.lower_t[self.lower_t.len() - 1])
+    }
+
+    /// The number of points in the spline.
+    pub fn num_points(&self) -> usize {
+        self.lower_t.len()
     }
 }
 
