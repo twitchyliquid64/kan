@@ -80,7 +80,7 @@ mod tests {
 
         Spline {
             spline: uvf::S::identity(),
-            extend_by: None,// Some(1500.),
+            extend_by: Some(1500.),
         }
         .render(bmb)
         .unwrap();

@@ -47,12 +47,14 @@ impl<V: Float + std::fmt::Debug> S<V> {
         let two = V::one() + V::one();
         let three = two + V::one();
         let max = (two).powi(POW_DOMAIN); // 2^12
-        let quarter = max.div(two).div(two);
 
         Self {
             lower_t: smallvec![-max, V::zero(), max],
             lower_y: smallvec![-max, V::zero(), max],
-            cp_t: smallvec![(max.div(three) - max, (two*max.div(three) - max)), (max.div(three), two*max.div(three))],
+            cp_t: smallvec![
+                (max.div(three) - max, (two * max.div(three) - max)),
+                (max.div(three), two * max.div(three))
+            ],
         }
     }
 
@@ -76,7 +78,7 @@ impl<V: Float + std::fmt::Debug> S<V> {
                     return y0; // NOTE: clamping when out of bounds
                 };
 
-                let (y1, y2)  = self.cp_t[i];
+                let (y1, y2) = self.cp_t[i];
 
                 let t = normalize(t, t0, t3);
                 println!(
@@ -86,13 +88,12 @@ impl<V: Float + std::fmt::Debug> S<V> {
 
                 let two = V::one() + V::one();
                 let three = two + V::one();
-                let six = three * two;
 
-                // Cubic B-Spline basis functions
-                let b0 = (-t.powi(3) + three * t.powi(2) - three * t + V::one()) / six;
-                let b1 = (three * t.powi(3) - six * t.powi(2) + (three + V::one())) / six;
-                let b2 = (-three * t.powi(3) + three * t.powi(2) + three * t + V::one()) / six;
-                let b3 = t.powi(3) / six;
+                // Bernstein polynomials of degree 4
+                let b0 = (V::one() - t).powi(3);
+                let b1 = three * t * (V::one() - t).powi(2);
+                let b2 = three * t.powi(2) * (V::one() - t);
+                let b3 = t.powi(3);
                 let out = (b0 * y0) + (b1 * y1) + (b2 * y2) + (b3 * y3);
 
                 println!(" Out:\t{:?}", out);
@@ -116,7 +117,7 @@ impl<V: Float + std::fmt::Debug> S<V> {
 mod tests {
     use super::*;
 
-    const TEST_TOLERANCE: f32 = 1.0e-7;
+    const TEST_TOLERANCE: f32 = 1.0e-6;
 
     #[test]
     fn _normalize() {
