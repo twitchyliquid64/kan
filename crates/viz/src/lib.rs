@@ -16,7 +16,7 @@ impl Spline {
     }
 
     pub fn render(self, bb: BitMapBackend) -> Result<(), Box<dyn std::error::Error>> {
-        const STEPS: usize = 200;
+        const STEPS: usize = 150;
 
         let (mut t0, mut t1) = self.spline.t_domain();
         if let Some(e) = self.extend_by {
@@ -54,7 +54,8 @@ impl Spline {
         // Insert the data into the chart, add a legend
         chart
             .draw_series(LineSeries::new(points, &RED))?
-            .label("uwu spline");
+            .label("uwu spline")
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
 
         chart
             .configure_series_labels()

@@ -2,7 +2,7 @@ use num_traits::float::Float;
 use smallvec::{smallvec, SmallVec};
 
 const DEFAULT_MAX_GRIDS: usize = 6;
-const POW_DOMAIN: i32 = 12;
+const POW_DOMAIN: i32 = 15;
 
 #[macro_export]
 macro_rules! assert_near {
@@ -87,10 +87,19 @@ impl<V: Float + std::fmt::Debug> S<V> {
                 // let lerp2 = yc + (y1 - yc) * t;
                 // lerp1 + (lerp2 - lerp1) * t
 
-                let one_t = V::one() - t;
-                let one_t2 = one_t * one_t;
-                // Le quadratic formular-ayy
-                yc + (y0 - yc) * one_t2 + (y1 - yc) * t * t
+                // let one_t = V::one() - t;
+                // let one_t2 = one_t * one_t;
+                // // Le quadratic formular-ayy
+                // let out = yc + (y0 - yc) * one_t2 + (y1 - yc) * t * t;
+
+                // Bernstein polynomials of degree 3
+                let b0 = (V::one() - t).powi(2);
+                let b1 = (V::one() + V::one()) * t * (V::one() - t);
+                let b2 = t.powi(2);
+                let out = (b0 * y0) + (b1 * yc) + (b2 * y1);
+
+                println!(" Out:\t{:?}", out);
+                out
             }
         }
     }
@@ -110,7 +119,7 @@ impl<V: Float + std::fmt::Debug> S<V> {
 mod tests {
     use super::*;
 
-    const TEST_TOLERANCE: f32 = 1.0e-6;
+    const TEST_TOLERANCE: f32 = 1.0e-7;
 
     #[test]
     fn _normalize() {
