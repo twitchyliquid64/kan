@@ -41,7 +41,7 @@ impl Spline {
         canvas.fill(&WHITE)?;
         let mut chart = ChartBuilder::on(&canvas)
             .caption(
-                format!("spline<N={}, O=3>", self.spline.num_points()),
+                format!("spline<N={}, O=4>", self.spline.num_points()),
                 ("sans-serif", 50).into_font(),
             )
             .margin(12)
@@ -76,11 +76,11 @@ mod tests {
     #[test]
     #[ignore]
     fn spline_viz_smoketest() {
-        let bmb = BitMapBackend::new("/tmp/spline_viz_smoketest.png", (720, 560));
+        let bmb = BitMapBackend::new("/tmp/spline_viz_smoketest.png", (1080, 720));
 
         Spline {
             spline: uvf::S::identity(),
-            extend_by: Some(500.),
+            extend_by: None,// Some(1500.),
         }
         .render(bmb)
         .unwrap();

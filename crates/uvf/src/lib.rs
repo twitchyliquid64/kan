@@ -35,8 +35,8 @@ pub struct S<V: Float = f32, const M: usize = DEFAULT_MAX_GRIDS> {
     lower_t: SmallVec<[V; M]>,
     /// lower_y describes the lower value of the ith interval.
     lower_y: SmallVec<[V; M]>,
-    /// cp_t describes the control point of the ith interval.
-    cp_t: SmallVec<[V; M]>,
+    /// cp_t describes the control points of the ith interval.
+    cp_t: SmallVec<[(V, V); M]>,
 }
 
 impl<V: Float + std::fmt::Debug> S<V> {
@@ -45,13 +45,14 @@ impl<V: Float + std::fmt::Debug> S<V> {
     /// To keep numeric stability, this is defined over the domain -2^POW_DOMAIN~2^POW_DOMAIN.
     pub fn identity() -> Self {
         let two = V::one() + V::one();
+        let three = two + V::one();
         let max = (two).powi(POW_DOMAIN); // 2^12
-        let mid = max.div(two);
+        let quarter = max.div(two).div(two);
 
         Self {
             lower_t: smallvec![-max, V::zero(), max],
             lower_y: smallvec![-max, V::zero(), max],
-            cp_t: smallvec![-mid, mid],
+            cp_t: smallvec![(max.div(three) - max, (two*max.div(three) - max)), (max.div(three), two*max.div(three))],
         }
     }
 
@@ -69,34 +70,30 @@ impl<V: Float + std::fmt::Debug> S<V> {
             Some(i) => {
                 let n = self.lower_t.len() - 1;
                 let (t0, y0) = (self.lower_t[i], self.lower_y[i]);
-                let (t1, y1) = if i + 1 <= n {
+                let (t3, y3) = if i + 1 <= n {
                     (self.lower_t[i + 1], self.lower_y[i + 1])
                 } else {
                     return y0; // NOTE: clamping when out of bounds
                 };
 
-                let yc = self.cp_t[i];
+                let (y1, y2)  = self.cp_t[i];
 
-                let t = normalize(t, t0, t1);
+                let t = normalize(t, t0, t3);
                 println!(
-                    "[{:?}]\n T:\t{:?} => {:?}\tnorm: {:?}\n Y:\t{:?} => {:?} => {:?}",
-                    i, t0, t1, t, y0, yc, y1
+                    "[{:?}]\n T:\t{:?} => {:?}\tnorm: {:?}\n Y:\t{:?} => {:?} => {:?} => {:?}",
+                    i, t0, t3, t, y0, y1, y2, y3
                 );
 
-                // let lerp1 = y0 + (yc - y0) * t;
-                // let lerp2 = yc + (y1 - yc) * t;
-                // lerp1 + (lerp2 - lerp1) * t
+                let two = V::one() + V::one();
+                let three = two + V::one();
+                let six = three * two;
 
-                // let one_t = V::one() - t;
-                // let one_t2 = one_t * one_t;
-                // // Le quadratic formular-ayy
-                // let out = yc + (y0 - yc) * one_t2 + (y1 - yc) * t * t;
-
-                // Bernstein polynomials of degree 3
-                let b0 = (V::one() - t).powi(2);
-                let b1 = (V::one() + V::one()) * t * (V::one() - t);
-                let b2 = t.powi(2);
-                let out = (b0 * y0) + (b1 * yc) + (b2 * y1);
+                // Cubic B-Spline basis functions
+                let b0 = (-t.powi(3) + three * t.powi(2) - three * t + V::one()) / six;
+                let b1 = (three * t.powi(3) - six * t.powi(2) + (three + V::one())) / six;
+                let b2 = (-three * t.powi(3) + three * t.powi(2) + three * t + V::one()) / six;
+                let b3 = t.powi(3) / six;
+                let out = (b0 * y0) + (b1 * y1) + (b2 * y2) + (b3 * y3);
 
                 println!(" Out:\t{:?}", out);
                 out
