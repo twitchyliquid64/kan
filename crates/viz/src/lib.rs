@@ -16,7 +16,7 @@ impl Spline {
     }
 
     pub fn render(self, bb: BitMapBackend) -> Result<(), Box<dyn std::error::Error>> {
-        const STEPS: usize = 150;
+        const STEPS: usize = 85;
 
         let (mut t0, mut t1) = self.spline.t_domain();
         if let Some(e) = self.extend_by {
@@ -41,7 +41,12 @@ impl Spline {
         canvas.fill(&WHITE)?;
         let mut chart = ChartBuilder::on(&canvas)
             .caption(
-                format!("spline<N={}, O=4>", self.spline.num_points()),
+                format!(
+                    "spline<N={}, {:.2}..{:.2}>",
+                    self.spline.num_points(),
+                    t0,
+                    t1
+                ),
                 ("sans-serif", 50).into_font(),
             )
             .margin(12)
@@ -81,6 +86,34 @@ mod tests {
         Spline {
             spline: uvf::S::identity(),
             extend_by: Some(1500.),
+        }
+        .render(bmb)
+        .unwrap();
+    }
+
+    #[test]
+    #[ignore]
+    fn spline_viz_training() {
+        let mut s = uvf::S::identity();
+
+        // Toy training loop: f(-10000) = 10000, f(0) = 0, f(10000) = 10000
+        let pos = -10000.0;
+        for _ in 0..5000 {
+            let out = s.eval(pos);
+            s.adjust(&uvf::Params::default(), pos, out - 10000.0, out);
+            let pos = 0.0;
+            let out = s.eval(pos);
+            s.adjust(&uvf::Params::default(), pos, out, out);
+            let pos = 10000.0;
+            let out = s.eval(pos);
+            s.adjust(&uvf::Params::default(), pos, out + 10000.0, out);
+        }
+
+        let bmb = BitMapBackend::new("/tmp/spline_viz_training.png", (1080, 720));
+
+        Spline {
+            spline: s,
+            extend_by: None,
         }
         .render(bmb)
         .unwrap();
