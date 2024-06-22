@@ -6,3 +6,7 @@ edition = "2021"
 [dependencies]
 plotters.workspace = true
 uvf.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+command-fds = "0.3"
+os_pipe = "1.2"

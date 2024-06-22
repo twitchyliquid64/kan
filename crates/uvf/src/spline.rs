@@ -87,15 +87,15 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
                 let ((y0, y1, y2, y3), (t0, t3)) = self.coeffs_for_interval(i);
 
                 let t = normalize(t, t0, t3);
-                println!(
-                    "[{:?}]\n T:\t{:?} => {:?}\tnorm: {:?}\n Y:\t{:?} => {:?} => {:?} => {:?}",
-                    i, t0, t3, t, y0, y1, y2, y3
-                );
+                // println!(
+                //     "[{:?}]\n T:\t{:?} => {:?}\tnorm: {:?}\n Y:\t{:?} => {:?} => {:?} => {:?}",
+                //     i, t0, t3, t, y0, y1, y2, y3
+                // );
 
                 let (b0, b1, b2, b3) = S::basis_functions(t);
                 let out = (b0 * y0) + (b1 * y1) + (b2 * y2) + (b3 * y3);
 
-                println!(" Out:\t{:?}", out);
+                // println!(" Out:\t{:?}", out);
                 out
             }
         }
@@ -125,7 +125,7 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
     }
 
     /// Adjusts the spline based on some error, and the input + observed output value.
-    pub fn adjust(&mut self, params: &Params, t: V, error: V, out: V) {
+    pub fn adjust(&mut self, params: &Params, t: V, error: V) {
         // TODO: avoid searching for correct interval?
         if let Some(i) = self.ith_floor(t) {
             let (_, (t0, t3)) = self.coeffs_for_interval(i);
@@ -155,8 +155,6 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
                 self.cp_t[i - 1].1 = -mix;
                 self.cp_t[i].0 = mix;
             }
-
-            // TODO: Normalize lower as well.
         }
     }
 }
@@ -232,13 +230,13 @@ mod tests {
         let pos = -10000.0;
         for _ in 0..1000 {
             let out = s.eval(pos);
-            s.adjust(&p, pos, out - 10000.0, out);
+            s.adjust(&p, pos, out - 10000.0);
             let pos = 0.0;
             let out = s.eval(pos);
-            s.adjust(&p, pos, out, out);
+            s.adjust(&p, pos, out);
             let pos = 10000.0;
             let out = s.eval(pos);
-            s.adjust(&p, pos, out + 10000.0, out);
+            s.adjust(&p, pos, out + 10000.0);
         }
 
         const TEST_TOLERANCE: f32 = 2.0;

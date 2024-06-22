@@ -27,6 +27,7 @@ in pkgs.mkShell {
 
   nativeBuildInputs = [
     pkgs.pkg-config
+    pkgs.ffmpeg
   ];
 
   LIBCLANG_PATH = "${pkgs.llvmPackages.libclang}/lib";
