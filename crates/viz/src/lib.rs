@@ -68,6 +68,9 @@ pub fn make_video<F: FnMut(&mut Vec<u8>, usize) -> bool>(
         use std::io::Write;
         writer.write_all(&buf)?;
         n += 1;
+        if n == 4 {
+            writer.flush()?; // get ffmpeg encoding early on
+        }
     }
 
     drop(writer);

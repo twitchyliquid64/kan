@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/uvf", "crates/viz"]
+members = ["crates/uvf", "crates/viz", "tests"]
 resolver = "2"
 
 [profile.release-with-debug]
@@ -19,3 +19,4 @@ serde = { version = "1", features = ["derive", "rc"] }
 serde_cbor = "0.11"
 kurbo = "0.11"
 
+rand = "0.8"

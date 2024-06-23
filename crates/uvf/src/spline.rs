@@ -166,6 +166,12 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
         (self.lower_t[0], self.lower_t[self.lower_t.len() - 1])
     }
 
+    /// The output space this function is defined for
+    #[inline(always)]
+    pub fn y_domain(&self) -> (V, V) {
+        (self.lower_y[0], self.lower_y[self.lower_y.len() - 1])
+    }
+
     /// The number of points in the spline.
     pub fn num_points(&self) -> usize {
         self.lower_t.len()
@@ -210,6 +216,17 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
                 self.cp_t[i - 1].1 = -mix;
                 self.cp_t[i].0 = mix;
             }
+        }
+    }
+
+    /// Adjusts each parameter based on the value returned from the given callback.
+    pub fn dither_y<F: FnMut() -> V>(&mut self, mut cb: F) {
+        for y in self.lower_y.iter_mut() {
+            *y = *y + cb();
+        }
+        for y in self.cp_t.iter_mut() {
+            y.0 = y.0 + cb();
+            y.1 = y.1 + cb();
         }
     }
 }
@@ -335,6 +352,16 @@ mod tests {
         assert_near!(s.dydt(1.0), 2.0);
         assert_near!(s.dydt(0.0), 2.0);
         assert_near!(s.dydt(-1.0), 2.0);
+    }
+
+    #[test]
+    fn scale_y() {
+        // Make the spline negate the input: f(x) = -x.
+        let mut s = S::<f32>::identity();
+        s.scale_y(-1.0);
+        assert_near!(s.eval(1.0), -1.0);
+        assert_near!(s.eval(0.0), 0.0);
+        assert_near!(s.eval(-1.0), 1.0);
     }
 
     // #[test]
