@@ -5,6 +5,11 @@ pub(crate) fn normalize<V: Float>(p: V, min: V, max: V) -> V {
     (p - min) / (max - min)
 }
 
+/// derivative of the normalize function.
+pub(crate) fn normalize_dpdt<V: Float>(min: V, max: V) -> V {
+    V::one().div(max - min)
+}
+
 mod spline;
 pub use spline::*;
 

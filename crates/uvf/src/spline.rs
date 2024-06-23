@@ -1,4 +1,4 @@
-use crate::normalize;
+use crate::{normalize, normalize_dpdt};
 use num_traits::{float::Float, FromPrimitive};
 use smallvec::{smallvec, SmallVec};
 
@@ -53,6 +53,19 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
         }
     }
 
+    /// identity_smol returns a spline where the output value is the same as the input value.
+    /// This spline has a single curve segment.
+    pub fn identity_smol() -> Self {
+        let two = V::one() + V::one();
+        let max = (two).powi(POW_DOMAIN); // 2^15
+
+        Self {
+            lower_t: smallvec![-max, max],
+            lower_y: smallvec![-max, max],
+            cp_t: smallvec![(-max.div(two), max.div(two))],
+        }
+    }
+
     /// returns the index of the control point preceeding the given
     #[inline(always)]
     pub(crate) fn ith_floor(&self, t: V) -> Option<usize> {
@@ -101,6 +114,40 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
         }
     }
 
+    /// computes the derivative of the spline's output (y) with respect to t.
+    pub fn dydt(&self, t: V) -> V {
+        let i = self.ith_floor(t);
+        match i {
+            None => V::zero(), // OOB
+            Some(i) => {
+                if i >= self.lower_t.len() - 1 {
+                    return V::zero(); // OOB
+                };
+
+                // The partial derivative of a bezier spline with respect to its input
+                // is itself a bezier spline of one degree less. This spline is:
+                //
+                // sum( Bx-1(t) * (Yx+1 - Yx) )
+                let ((y0, y1, y2, y3), (t0, t3)) = self.coeffs_for_interval(i);
+                let y0 = y1 - y0;
+                let y1 = y2 - y1;
+                let y2 = y3 - y2;
+
+                let two = V::one() + V::one();
+                let three = two + V::one();
+
+                let norm_dt = normalize_dpdt(t0, t3);
+                let t = normalize(t, t0, t3);
+                // Bernstein polynomials of degree 3
+                let b0 = (V::one() - t).powi(2);
+                let b1 = two * t * (V::one() - t);
+                let b2 = t.powi(2);
+
+                three * (b0 * y0 + b1 * y1 + b2 * y2) * norm_dt
+            }
+        }
+    }
+
     /// Returns value for each control point, and the bounds of the interval in input space.
     ///
     /// SAFETY: Will panic if the interval is out of bounds or is the last interval.
@@ -122,6 +169,14 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
     /// The number of points in the spline.
     pub fn num_points(&self) -> usize {
         self.lower_t.len()
+    }
+
+    /// Scales the output values of the spline by the given scalar.
+    pub fn scale_y(&mut self, amt: V) {
+        self.lower_y.iter_mut().for_each(|y| *y = amt * *y);
+        self.cp_t
+            .iter_mut()
+            .for_each(|p| *p = (amt * p.0, amt * p.1));
     }
 
     /// Adjusts the spline based on some error, and the input + observed output value.
@@ -186,18 +241,29 @@ mod tests {
     fn eval_identity_zero() {
         assert_near!(S::<f32>::identity().eval(0.0), 0.0);
         assert_near!(S::<f32>::identity().eval(-0.0), -0.0);
+
+        assert_near!(S::<f32>::identity_smol().eval(0.0), 0.0);
+        assert_near!(S::<f32>::identity_smol().eval(-0.0), -0.0);
     }
 
     #[test]
     fn eval_identity_one() {
         assert_near!(S::<f32>::identity().eval(1.0), 1.0);
         assert_near!(S::<f32>::identity().eval(-1.0), -1.0);
+
+        const TEST_TOLERANCE: f32 = 0.5;
+        assert_near!(S::<f32>::identity_smol().eval(1.0), 1.0);
+        assert_near!(S::<f32>::identity_smol().eval(-1.0), -1.0);
     }
 
     #[test]
     fn eval_identity_five() {
         assert_near!(S::<f32>::identity().eval(5.0), 5.0);
         assert_near!(S::<f32>::identity().eval(-5.0), -5.0);
+
+        const TEST_TOLERANCE: f32 = 0.8;
+        assert_near!(S::<f32>::identity_smol().eval(5.0), 5.0);
+        assert_near!(S::<f32>::identity_smol().eval(-5.0), -5.0);
     }
 
     #[test]
@@ -243,6 +309,32 @@ mod tests {
         assert_near!(s.eval(-10000.0), 10000.0);
         assert_near!(s.eval(0.0), 0.0);
         assert_near!(s.eval(10000.0), -10000.0);
+    }
+
+    #[test]
+    fn dydt_identity() {
+        assert_near!(S::<f32>::identity().dydt(1.0), 1.0);
+        assert_near!(S::<f32>::identity().dydt(-1.0), 1.0);
+
+        const TEST_TOLERANCE: f32 = 0.5;
+        assert_near!(S::<f32>::identity_smol().dydt(1.0), 1.0);
+        assert_near!(S::<f32>::identity_smol().dydt(-1.0), 1.0);
+    }
+
+    #[test]
+    fn dydt_linear() {
+        // Make the spline double the input: f(x) = 2x.
+        let mut s = S::<f32>::identity();
+        s.scale_y(2.0);
+        assert_near!(s.dydt(1.0), 2.0);
+        assert_near!(s.dydt(0.0), 2.0);
+        assert_near!(s.dydt(-1.0), 2.0);
+        const TEST_TOLERANCE: f32 = 0.5;
+        let mut s = S::<f32>::identity_smol();
+        s.scale_y(2.0);
+        assert_near!(s.dydt(1.0), 2.0);
+        assert_near!(s.dydt(0.0), 2.0);
+        assert_near!(s.dydt(-1.0), 2.0);
     }
 
     // #[test]
