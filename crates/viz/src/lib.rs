@@ -1,3 +1,4 @@
+use plotters::coord::Shift;
 use plotters::prelude::*;
 use uvf::S;
 
@@ -116,7 +117,10 @@ impl Spline {
         "uwu spline".to_string()
     }
 
-    pub fn render(self, bb: BitMapBackend) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn render<'a, DB: DrawingBackend>(
+        self,
+        canvas: &'a DrawingArea<DB, Shift>,
+    ) -> Result<(), DrawingAreaErrorKind<DB::ErrorType>> {
         let (mut t0, mut t1) = self.spline.t_domain();
         if let Some(e) = self.extend_by {
             t0 -= e;
@@ -128,7 +132,6 @@ impl Spline {
         let mut points = vec![(0f32, 0f32); DEFAULT_NUM_GRAPH_POINTS];
         let (y_min, y_max) = self.datapoints(t0, t1, &mut points);
 
-        let canvas = bb.into_drawing_area();
         canvas.fill(&WHITE)?;
         let mut chart = ChartBuilder::on(&canvas)
             .caption(self.title(), ("sans-serif", 50).into_font())
@@ -170,7 +173,9 @@ mod tests {
         )
         .unwrap();
 
-        Spline::viz(uvf::S::identity()).render(bmb).unwrap();
+        Spline::viz(uvf::S::identity())
+            .render(&bmb.into_drawing_area())
+            .unwrap();
     }
 
     #[test]
@@ -197,7 +202,7 @@ mod tests {
             spline: s,
             extend_by: None,
         }
-        .render(bmb)
+        .render(&bmb.into_drawing_area())
         .unwrap();
     }
 
@@ -220,7 +225,7 @@ mod tests {
                     spline: s.clone(),
                     extend_by: None,
                 }
-                .render(root)
+                .render(&root.into_drawing_area())
                 .unwrap();
 
                 // Train
