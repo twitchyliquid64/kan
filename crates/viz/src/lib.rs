@@ -207,15 +207,15 @@ mod tests {
 
         // Toy training loop: f(-10000) = 10000, f(0) = 0, f(10000) = 10000
         for _ in 0..5000 {
-            let pos = -10000.0;
+            let pos = -1000.0;
             let out = s.eval(pos);
-            s.adjust(&uvf::Params::default(), pos, out - 10000.0);
+            s.adjust(&uvf::Params::default(), pos, out - 1000.0);
             let pos = 0.0;
             let out = s.eval(pos);
             s.adjust(&uvf::Params::default(), pos, out);
-            let pos = 10000.0;
+            let pos = 1000.0;
             let out = s.eval(pos);
-            s.adjust(&uvf::Params::default(), pos, out + 10000.0);
+            s.adjust(&uvf::Params::default(), pos, out + 1000.0);
         }
 
         let bmb = BitMapBackend::new("/tmp/spline_viz_training.png", (1080, 720));
@@ -232,42 +232,42 @@ mod tests {
     #[test]
     #[ignore]
     fn spline_viz_video_smoketest() {
-        let mut s = uvf::S::identity();
+        let mut s = uvf::S::new(-15000.0, 15000.0, 3);
+        let p = uvf::Params {
+            learning_rate: 0.001,
+            ..uvf::Params::default()
+        };
 
-        make_video(
-            (1080, 720),
-            "/tmp/spline_video_smoketest.mp4",
-            |buff, _n| {
-                // Render
-                let root = BitMapBackend::<plotters::backend::RGBPixel>::with_buffer_and_format(
-                    buff,
-                    (1080, 720),
-                )
-                .unwrap();
-                Spline {
-                    spline: s.clone(),
-                    extend_by: None,
-                    title: Title::Default,
-                }
-                .render(&root.into_drawing_area())
-                .unwrap();
+        make_video((1080, 720), "/tmp/vid_spline_smoketest.mp4", |buff, n| {
+            // Render
+            let root = BitMapBackend::<plotters::backend::RGBPixel>::with_buffer_and_format(
+                buff,
+                (1080, 720),
+            )
+            .unwrap();
+            Spline {
+                spline: s.clone(),
+                extend_by: None,
+                title: Title::Default,
+            }
+            .render(&root.into_drawing_area())
+            .unwrap();
 
-                // Train
-                for _ in 0..25 {
-                    let pos = -10000.0;
-                    let out = s.eval(pos);
-                    s.adjust(&uvf::Params::default(), pos, out - 10000.0);
-                    let pos = 0.0;
-                    let out = s.eval(pos);
-                    s.adjust(&uvf::Params::default(), pos, out);
-                    let pos = 10000.0;
-                    let out = s.eval(pos);
-                    s.adjust(&uvf::Params::default(), pos, out + 10000.0);
-                }
+            // Train
+            for _ in 0..125 {
+                let pos = -10000.0;
+                let out = s.eval(pos);
+                s.adjust(&p, pos, out - 10000.0);
+                let pos = 0.0;
+                let out = s.eval(pos);
+                s.adjust(&p, pos, out);
+                let pos = 10000.0;
+                let out = s.eval(pos);
+                s.adjust(&p, pos, out + 10000.0);
+            }
 
-                (s.eval(-10000.0) - 10000.0).abs() > 2.0
-            },
-        )
+            (s.eval(-10000.0) - 10000.0).abs() > 1.0 && n < 300
+        })
         .unwrap();
     }
 }

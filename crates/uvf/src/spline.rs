@@ -34,7 +34,7 @@ pub struct S<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
     cp_t: SmallVec<[(V, V); M]>,
 }
 
-impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
+impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + FromPrimitive> S<V> {
     // TODO: TESTS
     pub fn new(min: V, max: V, segments: usize) -> Self {
         let per_segment = (max - min) / V::from(segments).unwrap();
@@ -141,37 +141,42 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
     }
 
     /// computes the derivative of the spline's output (y) with respect to t.
-    pub fn dydt(&self, t: V) -> V {
-        let i = self.ith_floor(t);
-        match i {
-            None => V::zero(), // OOB
+    pub fn dtdy(&self, mut t: V) -> V {
+        let i = match self.ith_floor(t) {
+            None => {
+                t = V::zero();
+                0
+            }
             Some(i) => {
                 if i >= self.lower_t.len() - 1 {
-                    return V::zero(); // OOB
-                };
-
-                // The partial derivative of a bezier spline with respect to its input
-                // is itself a bezier spline of one degree less. This spline is:
-                //
-                // sum( Bx-1(t) * (Yx+1 - Yx) )
-                let ((y0, y1, y2, y3), (t0, t3)) = self.coeffs_for_interval(i);
-                let y0 = y1 - y0;
-                let y1 = y2 - y1;
-                let y2 = y3 - y2;
-
-                let two = V::one() + V::one();
-                let three = two + V::one();
-
-                let norm_dt = normalize_dpdt(t0, t3);
-                let t = normalize(t, t0, t3);
-                // Bernstein polynomials of degree 3
-                let b0 = (V::one() - t).powi(2);
-                let b1 = two * t * (V::one() - t);
-                let b2 = t.powi(2);
-
-                three * (b0 * y0 + b1 * y1 + b2 * y2) * norm_dt
+                    t = V::one();
+                    self.lower_t.len() - 2
+                } else {
+                    i
+                }
             }
-        }
+        };
+
+        // The partial derivative of a bezier spline with respect to its input
+        // is itself a bezier spline of one degree less. This spline is:
+        //
+        // sum( Bx-1(t) * (Yx+1 - Yx) )
+        let ((y0, y1, y2, y3), (t0, t3)) = self.coeffs_for_interval(i);
+        let y0 = y1 - y0;
+        let y1 = y2 - y1;
+        let y2 = y3 - y2;
+
+        let two = V::one() + V::one();
+        let three = two + V::one();
+
+        let norm_dt = normalize_dpdt(t0, t3);
+        let t = normalize(t, t0, t3);
+        // Bernstein polynomials of degree 3
+        let b0 = (V::one() - t).powi(2);
+        let b1 = two * t * (V::one() - t);
+        let b2 = t.powi(2);
+
+        three * (b0 * y0 + b1 * y1 + b2 * y2) * norm_dt
     }
 
     /// Returns value for each control point, and the bounds of the interval in input space.
@@ -211,23 +216,63 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
             .for_each(|p| *p = (amt * p.0, amt * p.1));
     }
 
-    /// Adjusts the spline based on some error, and the input + observed output value.
+    /// the parameter t must be normalized within a segment (i.e.: 0 <= t <= 1).
+    #[inline(always)]
+    fn dt_basis_functions(t: V) -> (V, V, V, V) {
+        let two = V::one() + V::one();
+        let three = two + V::one();
+        let four = three + V::one();
+
+        let b0 = -three * (t - V::one()).powi(2);
+        let b1 = three * (three * t.powi(2) - four * t + V::one());
+        let b2 = -three * (three * t.powi(2) - two * t);
+        let b3 = three * t.powi(2);
+        (b0, b1, b2, b3)
+    }
+
+    #[inline(always)]
+    fn grad_clip(&self, v: V) -> V {
+        let max_spread = V::from(0.1).unwrap();
+        v.min(max_spread).max(-max_spread)
+    }
+
+    /// Adjusts the spline based on some error, and the input value.
     pub fn adjust(&mut self, params: &Params, t: V, error: V) {
+        if !error.is_normal() {
+            println!("skipping non-normal error {:?}", error);
+            return;
+        }
+
         // TODO: avoid searching for correct interval?
         if let Some(i) = self.ith_floor(t) {
             if i >= self.lower_t.len() - 1 {
                 self.lower_y[i] -= error * V::from_f32(params.learning_rate).unwrap();
                 return;
             };
-            let (_, (t0, t3)) = self.coeffs_for_interval(i);
-            let (b0, b1, b2, b3) = S::basis_functions(normalize(t, t0, t3)); // TODO: Avoid normalizing?
+            let ((y0, y1, y2, y3), (t0, t3)) = self.coeffs_for_interval(i);
 
+            // Apply the derivatives of each basis function with respect to t
+            // to each parameter.
             let lr = V::from_f32(params.learning_rate).unwrap();
-
-            self.lower_y[i] -= error * lr * b0;
-            self.lower_y[i + 1] -= error * lr * b3;
-            self.cp_t[i].0 -= error * lr * b1;
-            self.cp_t[i].1 -= error * lr * b2;
+            let t = normalize(t, t0, t3);
+            let (db0, db1, db2, db3) = S::dt_basis_functions(t);
+            let (b0, b1, b2, b3) = S::basis_functions(t);
+            if db0.is_normal() {
+                // let m = self.grad_clip(lr * db0);
+                self.lower_y[i] += error * b0 * lr / db0;
+            }
+            if db3.is_normal() {
+                // let m = self.grad_clip(lr * db3);
+                self.lower_y[i + 1] += error * b3 * lr / db3;
+            }
+            if db1.is_normal() {
+                // let m = self.grad_clip(lr * db1);
+                self.cp_t[i].0 += error * b1 * lr / db1;
+            }
+            if db2.is_normal() {
+                // let m = self.grad_clip(lr * db2);
+                self.cp_t[i].1 += error * b2 * lr / db2;
+            }
 
             // For the sake of learning smooth functions, normalize the sister control point
             // across the interval to have the same tangent as well.
@@ -332,16 +377,37 @@ mod tests {
     }
 
     #[test]
-    fn adjust_train_loop() {
-        let mut s = S::<f32>::identity();
+    fn adjust_trivial() {
+        let mut s = S::<f32>::new(-5.0, 5.0, 2);
         let p = Params {
-            learning_rate: 0.2,
+            learning_rate: 0.05,
+            ..Params::default()
+        };
+
+        println!("{:?}", s);
+        let target = 15.0;
+        for _ in 0..3000 {
+            let out = s.eval(0.0);
+            let delta = out - target;
+            s.adjust(&p, 0.0, delta);
+        }
+        println!("{:?}", s);
+
+        const TEST_TOLERANCE: f32 = 1.0e-4;
+        assert_near!(s.eval(0.0), 15.0);
+    }
+
+    #[test]
+    fn adjust_nontrivial() {
+        let mut s = S::<f32>::new(-20000.0, 20000.0, 4);
+        let p = Params {
+            learning_rate: 0.1,
             ..Params::default()
         };
 
         // Toy training loop: f(-10000) = 10000, f(0) = 0, f(10000) = 10000
-        let pos = -10000.0;
-        for _ in 0..1000 {
+        for _ in 0..500 {
+            let pos = -10000.0;
             let out = s.eval(pos);
             s.adjust(&p, pos, out - 10000.0);
             let pos = 0.0;
@@ -359,29 +425,29 @@ mod tests {
     }
 
     #[test]
-    fn dydt_identity() {
-        assert_near!(S::<f32>::identity().dydt(1.0), 1.0);
-        assert_near!(S::<f32>::identity().dydt(-1.0), 1.0);
+    fn dtdy_identity() {
+        assert_near!(S::<f32>::identity().dtdy(1.0), 1.0);
+        assert_near!(S::<f32>::identity().dtdy(-1.0), 1.0);
 
         const TEST_TOLERANCE: f32 = 0.5;
-        assert_near!(S::<f32>::identity_smol().dydt(1.0), 1.0);
-        assert_near!(S::<f32>::identity_smol().dydt(-1.0), 1.0);
+        assert_near!(S::<f32>::identity_smol().dtdy(1.0), 1.0);
+        assert_near!(S::<f32>::identity_smol().dtdy(-1.0), 1.0);
     }
 
     #[test]
-    fn dydt_linear() {
+    fn dtdy_linear() {
         // Make the spline double the input: f(x) = 2x.
         let mut s = S::<f32>::identity();
         s.scale_y(2.0);
-        assert_near!(s.dydt(1.0), 2.0);
-        assert_near!(s.dydt(0.0), 2.0);
-        assert_near!(s.dydt(-1.0), 2.0);
+        assert_near!(s.dtdy(1.0), 2.0);
+        assert_near!(s.dtdy(0.0), 2.0);
+        assert_near!(s.dtdy(-1.0), 2.0);
         const TEST_TOLERANCE: f32 = 0.5;
         let mut s = S::<f32>::identity_smol();
         s.scale_y(2.0);
-        assert_near!(s.dydt(1.0), 2.0);
-        assert_near!(s.dydt(0.0), 2.0);
-        assert_near!(s.dydt(-1.0), 2.0);
+        assert_near!(s.dtdy(1.0), 2.0);
+        assert_near!(s.dtdy(0.0), 2.0);
+        assert_near!(s.dtdy(-1.0), 2.0);
     }
 
     #[test]
@@ -394,15 +460,26 @@ mod tests {
         assert_near!(s.eval(-1.0), 1.0);
     }
 
-    // #[test]
-    // fn eval_non_linear() {
-    //     let mut s = S::<f32>::non_linear();
-    //     assert_near!(s.eval(0.0), -256.0);
-    //     assert_near!(s.eval(256.0), 16.0);
-    //     assert_near!(s.eval(512.0), 320.0);
-    //     s.invert();
-    //     assert_near!(s.eval(0.0), 0.);
-    //     assert_near!(s.eval(256.0), -256.0);
-    //     assert_near!(s.eval(512.0), -512.0);
-    // }
+    #[test]
+    fn dt_basis_functions() {
+        let mut s = S::<f32>::identity();
+
+        let (b0, b1, b2, b3) = S::dt_basis_functions(0.0);
+        assert_near!(b0, -3.0);
+        assert_near!(b1, 3.0);
+        assert_near!(b2, 0.0);
+        assert_near!(b3, 0.0);
+
+        let (b0, b1, b2, b3) = S::dt_basis_functions(0.5);
+        assert_near!(b0, -0.75);
+        assert_near!(b1, -0.75);
+        assert_near!(b2, 0.75);
+        assert_near!(b3, 0.75);
+
+        let (b0, b1, b2, b3) = S::dt_basis_functions(1.0);
+        assert_near!(b0, 0.0);
+        assert_near!(b1, 0.0);
+        assert_near!(b2, -3.0);
+        assert_near!(b3, 3.0);
+    }
 }
