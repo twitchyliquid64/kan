@@ -2,7 +2,7 @@ use plotters::coord::Shift;
 use plotters::prelude::*;
 use uvf::S;
 
-const DEFAULT_NUM_GRAPH_POINTS: usize = 85;
+const DEFAULT_NUM_GRAPH_POINTS: usize = 115;
 
 /// Renders a video file by calling the given function to generate every frame.
 ///
@@ -78,10 +78,18 @@ pub fn make_video<F: FnMut(&mut Vec<u8>, usize) -> bool>(
     Ok(())
 }
 
+#[derive(Debug, Default)]
+pub enum Title {
+    #[default]
+    Default,
+    Str(&'static str),
+}
+
 /// Visualizes a spline.
 pub struct Spline {
     pub spline: S,
     pub extend_by: Option<f32>,
+    pub title: Title,
 }
 
 impl Spline {
@@ -89,7 +97,13 @@ impl Spline {
         Self {
             spline,
             extend_by: None,
+            title: Title::Default,
         }
+    }
+
+    pub fn title(mut self, title: &'static str) -> Self {
+        self.title = Title::Str(title);
+        self
     }
 
     pub fn datapoints(&self, t0: f32, t1: f32, points: &mut Vec<(f32, f32)>) -> (f32, f32) {
@@ -106,14 +120,19 @@ impl Spline {
         (y_min, y_max)
     }
 
-    pub(crate) fn title(&self) -> String {
-        let (t0, t1) = self.spline.t_domain();
-        format!(
-            "spline<N={}, {:.2}..{:.2}>",
-            self.spline.num_points(),
-            t0,
-            t1
-        )
+    pub(crate) fn title_str(&self) -> String {
+        match self.title {
+            Title::Default => {
+                let (t0, t1) = self.spline.t_domain();
+                format!(
+                    "spline<N={}, {:.2}..{:.2}>",
+                    self.spline.num_points(),
+                    t0,
+                    t1
+                )
+            }
+            Title::Str(s) => s.into(),
+        }
     }
 
     pub(crate) fn label(&self) -> String {
@@ -137,7 +156,7 @@ impl Spline {
 
         canvas.fill(&WHITE)?;
         let mut chart = ChartBuilder::on(&canvas)
-            .caption(self.title(), ("sans-serif", 50).into_font())
+            .caption(self.title_str(), ("sans-serif", 50).into_font())
             .margin(12)
             .x_label_area_size(30)
             .y_label_area_size(40)
@@ -204,6 +223,7 @@ mod tests {
         Spline {
             spline: s,
             extend_by: None,
+            title: Title::Default,
         }
         .render(&bmb.into_drawing_area())
         .unwrap();
@@ -227,6 +247,7 @@ mod tests {
                 Spline {
                     spline: s.clone(),
                     extend_by: None,
+                    title: Title::Default,
                 }
                 .render(&root.into_drawing_area())
                 .unwrap();

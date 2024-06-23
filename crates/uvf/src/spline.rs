@@ -35,6 +35,32 @@ pub struct S<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
 }
 
 impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
+    // TODO: TESTS
+    pub fn new(min: V, max: V, segments: usize) -> Self {
+        let per_segment = (max - min) / V::from(segments).unwrap();
+        let mut lower_t = SmallVec::with_capacity(segments + 1);
+        let mut lower_y = SmallVec::with_capacity(segments + 1);
+        let mut cp_t = SmallVec::with_capacity(segments);
+
+        for n in 0..segments {
+            let l = min + per_segment * V::from(n).unwrap();
+            lower_t.push(l);
+            lower_y.push(l);
+
+            let s3 = per_segment / V::from(3usize).unwrap();
+            cp_t.push((l + s3, l + s3 + s3));
+        }
+
+        lower_t.push(max);
+        lower_y.push(max);
+
+        Self {
+            lower_t,
+            lower_y,
+            cp_t,
+        }
+    }
+
     /// identity returns a spline where the output value is the same as the input value.
     ///
     /// To keep numeric stability, this is defined over the domain -2^POW_DOMAIN~2^POW_DOMAIN.
@@ -189,6 +215,10 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> S<V> {
     pub fn adjust(&mut self, params: &Params, t: V, error: V) {
         // TODO: avoid searching for correct interval?
         if let Some(i) = self.ith_floor(t) {
+            if i >= self.lower_t.len() - 1 {
+                self.lower_y[i] -= error * V::from_f32(params.learning_rate).unwrap();
+                return;
+            };
             let (_, (t0, t3)) = self.coeffs_for_interval(i);
             let (b0, b1, b2, b3) = S::basis_functions(normalize(t, t0, t3)); // TODO: Avoid normalizing?
 
