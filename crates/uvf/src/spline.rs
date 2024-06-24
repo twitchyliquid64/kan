@@ -217,6 +217,7 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
     }
 
     /// the parameter t must be normalized within a segment (i.e.: 0 <= t <= 1).
+    #[allow(dead_code)]
     #[inline(always)]
     fn dt_basis_functions(t: V) -> (V, V, V, V) {
         let two = V::one() + V::one();
@@ -231,9 +232,9 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
     }
 
     #[inline(always)]
-    fn grad_clip(&self, v: V) -> V {
-        let max_spread = V::from(0.1).unwrap();
-        v.min(max_spread).max(-max_spread)
+    fn grad_clamp(v: V) -> V {
+        let max_spread = V::from(10.).unwrap();
+        v.max(-max_spread).min(max_spread)
     }
 
     /// Adjusts the spline based on some error, and the input value.
@@ -246,51 +247,39 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
         // TODO: avoid searching for correct interval?
         if let Some(i) = self.ith_floor(t) {
             if i >= self.lower_t.len() - 1 {
-                self.lower_y[i] -= error * V::from_f32(params.learning_rate).unwrap();
+                // self.lower_y[i] -= error * V::from_f32(params.learning_rate).unwrap();
                 return;
             };
-            let ((y0, y1, y2, y3), (t0, t3)) = self.coeffs_for_interval(i);
+            let (_, (t0, t3)) = self.coeffs_for_interval(i);
 
-            // Apply the derivatives of each basis function with respect to t
-            // to each parameter.
+            // Use the basis function to apply the error to each parameter.
             let lr = V::from_f32(params.learning_rate).unwrap();
             let t = normalize(t, t0, t3);
-            let (db0, db1, db2, db3) = S::dt_basis_functions(t);
             let (b0, b1, b2, b3) = S::basis_functions(t);
-            if db0.is_normal() {
-                // let m = self.grad_clip(lr * db0);
-                self.lower_y[i] += error * b0 * lr / db0;
-            }
-            if db3.is_normal() {
-                // let m = self.grad_clip(lr * db3);
-                self.lower_y[i + 1] += error * b3 * lr / db3;
-            }
-            if db1.is_normal() {
-                // let m = self.grad_clip(lr * db1);
-                self.cp_t[i].0 += error * b1 * lr / db1;
-            }
-            if db2.is_normal() {
-                // let m = self.grad_clip(lr * db2);
-                self.cp_t[i].1 += error * b2 * lr / db2;
-            }
+            let calc = |b: V| error * S::grad_clamp(b * lr);
 
-            // For the sake of learning smooth functions, normalize the sister control point
-            // across the interval to have the same tangent as well.
-            let two = V::one() + V::one();
-            if i + 1 < self.cp_t.len() {
-                let mix = ((self.lower_y[i + 1] - self.cp_t[i].1)
-                    + (self.cp_t[i + 1].0 - self.lower_y[i + 1]))
-                    / two;
-                self.cp_t[i].1 = -mix;
-                self.cp_t[i + 1].0 = mix;
-            }
-            if i > 0 {
-                let mix = ((self.lower_y[i] - self.cp_t[i - 1].1)
-                    + (self.cp_t[i].0 - self.lower_y[i]))
-                    / two;
-                self.cp_t[i - 1].1 = -mix;
-                self.cp_t[i].0 = mix;
-            }
+            self.lower_y[i] -= calc(b0);
+            self.lower_y[i + 1] -= calc(b3);
+            self.cp_t[i].0 -= calc(b1);
+            self.cp_t[i].1 -= calc(b2);
+
+            // // For the sake of learning smooth functions, normalize the sister control point
+            // // across the interval to have the same tangent as well.
+            // let two = V::one() + V::one();
+            // if i + 1 < self.cp_t.len() {
+            //     let mix = ((self.lower_y[i + 1] - self.cp_t[i].1)
+            //         + (self.cp_t[i + 1].0 - self.lower_y[i + 1]))
+            //         / two;
+            //     self.cp_t[i].1 = self.lower_y[i] - mix;
+            //     self.cp_t[i + 1].0 = self.lower_y[i] + mix;
+            // }
+            // if i > 0 {
+            //     let mix = ((self.lower_y[i] - self.cp_t[i - 1].1)
+            //         + (self.cp_t[i].0 - self.lower_y[i]))
+            //         / two;
+            //     self.cp_t[i - 1].1 = self.lower_y[i] - mix;
+            //     self.cp_t[i].0 = self.lower_y[i] + mix;
+            // }
         }
     }
 
@@ -303,6 +292,26 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
             y.0 = y.0 + cb();
             y.1 = y.1 + cb();
         }
+    }
+
+    pub fn control_points(&self) -> Vec<(V, V)> {
+        let mut out = Vec::with_capacity(self.lower_t.len() * 3 + 1);
+        for (i, lt) in self.lower_t.iter().enumerate() {
+            out.push((*lt, self.lower_y[i]));
+            if i < self.lower_t.len() - 2 {
+                let t3 = self.lower_t[i + 1];
+                out.push((
+                    *lt + V::from(1.0 / 3.0).unwrap() * (t3 - *lt),
+                    self.cp_t[i].0,
+                ));
+                out.push((
+                    *lt + V::from(2.0 / 3.0).unwrap() * (t3 - *lt),
+                    self.cp_t[i].1,
+                ));
+            }
+        }
+
+        out
     }
 }
 
@@ -398,6 +407,31 @@ mod tests {
     }
 
     #[test]
+    fn adjust_trivial_invert() {
+        let mut s = S::<f32>::new(-5.0, 5.0, 1);
+        s.scale_y(-1.0);
+        let p = Params {
+            learning_rate: 0.05,
+            ..Params::default()
+        };
+
+        use rand::{rngs::StdRng, Rng, SeedableRng};
+        let mut rng = StdRng::seed_from_u64(42);
+
+        for _ in 0..1900 {
+            let target: f32 = rng.gen_range(-5.0..=5.0);
+            let out = s.eval(target);
+            let delta = out - target;
+            s.adjust(&p, target, delta);
+        }
+
+        const TEST_TOLERANCE: f32 = 0.02;
+        assert_near!(s.eval(0.0), 0.0);
+        assert_near!(s.eval(5.0), 5.0);
+        assert_near!(s.eval(-3.0), -3.0);
+    }
+
+    #[test]
     fn adjust_nontrivial() {
         let mut s = S::<f32>::new(-20000.0, 20000.0, 4);
         let p = Params {
@@ -462,8 +496,6 @@ mod tests {
 
     #[test]
     fn dt_basis_functions() {
-        let mut s = S::<f32>::identity();
-
         let (b0, b1, b2, b3) = S::dt_basis_functions(0.0);
         assert_near!(b0, -3.0);
         assert_near!(b1, 3.0);

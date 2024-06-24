@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 num-traits.workspace = true
 smallvec.workspace = true
+
+[dev-dependencies]
+rand.workspace = true

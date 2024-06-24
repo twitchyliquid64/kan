@@ -33,10 +33,10 @@ use uvf::assert_near;
 /// through spline 1.
 fn transfer_through_spline() {
     let mut rng = StdRng::seed_from_u64(42);
-    let mut s = S::new(-2000.0, 2000.0, 3);
+    let mut s = S::new(-2000.0, 2000.0, 1);
     let mut last = S::identity_smol();
-    //last.dither_y(|| rng.gen_range(-260.0..260.0));
-    last.scale_y(8.0);
+    last.dither_y(|| rng.gen_range(-260.0..260.0));
+    last.scale_y(18.0);
 
     let (min, max) = s.t_domain();
 
@@ -61,14 +61,13 @@ fn transfer_through_spline() {
                 .unwrap();
 
             // Train
-            for _ in 0..10000 {
+            for _ in 0..100 {
                 let input: f32 = rng.gen_range(min..=max);
                 let intermediate = s.eval(input);
                 let out = last.eval(intermediate);
                 let target = input;
 
-                let delta = out - target;
-                let error = 0.5 * (target - out).powi(2); // Would be summed if there was more outputs
+                // let error = 0.5 * (target - out).powi(2); // Would be summed if there was more outputs
                 let error_der = out - target; // 1/2 * (t - o)^2 => 1/2 * 2(t-o) * -1
 
                 // println!(
@@ -83,7 +82,7 @@ fn transfer_through_spline() {
                         learning_rate: 0.001,
                     },
                     input,
-                    error_der / last.dtdy(intermediate) * out,
+                    error_der * last.dtdy(intermediate),
                 );
             }
 

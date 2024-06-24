@@ -152,7 +152,13 @@ impl Spline {
         // Populate an array with 1024 (x, y) pairs over the entire domain,
         // keeping track of the min/max y value observed.
         let mut points = vec![(0f32, 0f32); DEFAULT_NUM_GRAPH_POINTS];
-        let (y_min, y_max) = self.datapoints(t0, t1, &mut points);
+        let (mut y_min, mut y_max) = self.datapoints(t0, t1, &mut points);
+
+        let control_points = self.spline.control_points();
+        control_points.iter().for_each(|(_x, y)| {
+            y_min = y_min.min(*y);
+            y_max = y_max.max(*y);
+        });
 
         canvas.fill(&WHITE)?;
         let mut chart = ChartBuilder::on(&canvas)
@@ -169,6 +175,13 @@ impl Spline {
             .draw_series(LineSeries::new(points, &RED))?
             .label(self.label())
             .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
+        // Plot the control points into the chart
+        chart.draw_series(
+            control_points
+                .iter()
+                .map(|(t, y)| Circle::new((*t, *y), 1, BLACK.filled())),
+        )?;
 
         chart
             .configure_series_labels()
@@ -234,7 +247,7 @@ mod tests {
     fn spline_viz_video_smoketest() {
         let mut s = uvf::S::new(-15000.0, 15000.0, 3);
         let p = uvf::Params {
-            learning_rate: 0.001,
+            learning_rate: 0.006,
             ..uvf::Params::default()
         };
 
@@ -254,7 +267,7 @@ mod tests {
             .unwrap();
 
             // Train
-            for _ in 0..125 {
+            for _ in 0..325 {
                 let pos = -10000.0;
                 let out = s.eval(pos);
                 s.adjust(&p, pos, out - 10000.0);
@@ -266,7 +279,7 @@ mod tests {
                 s.adjust(&p, pos, out + 10000.0);
             }
 
-            (s.eval(-10000.0) - 10000.0).abs() > 1.0 && n < 300
+            n < 300 // && (s.eval(-10000.0) - 10000.0).abs() > 1.0
         })
         .unwrap();
     }
