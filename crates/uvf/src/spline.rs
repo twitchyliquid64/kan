@@ -298,7 +298,7 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
         let mut out = Vec::with_capacity(self.lower_t.len() * 3 + 1);
         for (i, lt) in self.lower_t.iter().enumerate() {
             out.push((*lt, self.lower_y[i]));
-            if i < self.lower_t.len() - 2 {
+            if i < self.lower_t.len() - 1 {
                 let t3 = self.lower_t[i + 1];
                 out.push((
                     *lt + V::from(1.0 / 3.0).unwrap() * (t3 - *lt),

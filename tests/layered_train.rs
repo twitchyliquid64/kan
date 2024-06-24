@@ -120,18 +120,18 @@ fn transfer_through_spline() {
 ///   Input y--> Spline 2 (learnable) -->
 ///                                       Spline 3 (learnable) --> Output
 ///
-/// With a desired function of: f(x, y) = xy.
+/// With a desired function of: f(x, y) = x^2 + y^2.
 fn mul_network() {
     let mut rng = StdRng::seed_from_u64(1);
-    let mut x = S::new(-60.0, 60.0, 3);
-    let mut y = S::new(-60.0, 60.0, 3);
-    let mut c = S::new(-250.0, 250.0, 4);
+    let mut x = S::new(-60.0, 60.0, 1);
+    let mut y = S::new(-60.0, 60.0, 1);
+    let mut c = S::new(-1000.0, 1000.0, 1);
     // x.dither_y(|| rng.gen_range(-2.0..2.0));
     // y.dither_y(|| rng.gen_range(-2.0..2.0));
     // c.dither_y(|| rng.gen_range(-2.0..2.0));
 
     let params = &uvf::Params {
-        learning_rate: 0.00000001,
+        learning_rate: 0.0001,
     };
     make_video((1080, 720), "/tmp/vid_mul_network.mp4", |buff, n| {
         // Render
@@ -145,20 +145,20 @@ fn mul_network() {
         Spline::viz(c.clone()).title("c").render(&r[1]).unwrap();
 
         // Train
-        for _ in 0..24000 {
+        for _ in 0..10000 {
             let x_input: f32 = rng.gen_range(-45.0..45.0);
             let y_input: f32 = rng.gen_range(-45.0..45.0);
             let x_output = x.eval(x_input);
             let y_output = y.eval(y_input);
             let output = c.eval(x_output + y_output);
-            let error = output - (x_input * y_input);
-            let error = error.signum() * error.powi(2);
 
+            let target = x_input.powi(2) + y_input.powi(2);
+            let error_der = output - target;
             let gradient = c.dtdy(x_output + y_output);
-            c.adjust(params, x_output + y_output, error);
+            //c.adjust(params, x_output + y_output, error_der);
 
-            x.adjust(params, x_input, error * gradient);
-            y.adjust(params, y_input, error * gradient);
+            x.adjust(params, x_input, error_der * c.dtdy(x_output) / x_output);
+            y.adjust(params, y_input, error_der * c.dtdy(y_output) / y_output);
         }
 
         n < 250
@@ -166,6 +166,6 @@ fn mul_network() {
     .unwrap();
 
     const TEST_TOLERANCE: f32 = 0.5;
-    assert_near!(c.eval(x.eval(4.0) + y.eval(4.0)), 16.0);
-    assert_near!(c.eval(x.eval(2.0) + y.eval(1.0)), 2.0);
+    assert_near!(c.eval(x.eval(4.0) + y.eval(4.0)), 32.0);
+    assert_near!(c.eval(x.eval(2.0) + y.eval(1.0)), 5.0);
 }
