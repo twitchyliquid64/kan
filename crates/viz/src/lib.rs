@@ -165,23 +165,25 @@ impl Spline {
             .caption(self.title_str(), ("sans-serif", 50).into_font())
             .margin(12)
             .x_label_area_size(30)
-            .y_label_area_size(40)
+            .y_label_area_size(50)
             .build_cartesian_2d(t0..t1, y_min..y_max)?;
 
         chart.configure_mesh().x_desc("t").y_desc("y").draw()?;
 
         // Insert the data into the chart, add a legend
-        chart
-            .draw_series(LineSeries::new(points, &RED))?
-            .label(self.label())
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+        chart.draw_series(LineSeries::new(points, &RED))?;
+        //.label(self.label())
+        //.legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
 
         // Plot the control points into the chart
-        chart.draw_series(
-            control_points
-                .iter()
-                .map(|(t, y)| Circle::new((*t, *y), 1, BLACK.filled())),
-        )?;
+        chart
+            .draw_series(
+                control_points
+                    .iter()
+                    .map(|(t, y)| Circle::new((*t, *y), 1, BLACK.filled())),
+            )?
+            .label("cp's")
+            .legend(|(x, y)| Circle::new((x, y), 1, BLACK.filled()));
 
         chart
             .configure_series_labels()

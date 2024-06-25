@@ -258,8 +258,9 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
             let (b0, b1, b2, b3) = S::basis_functions(t);
             let calc = |b: V| error * S::grad_clamp(b * lr);
 
-            self.lower_y[i] -= calc(b0);
-            self.lower_y[i + 1] -= calc(b3);
+            let two = V::one() + V::one(); // CP's on interval boundaries get updated twice as frequently
+            self.lower_y[i] -= calc(b0) / two;
+            self.lower_y[i + 1] -= calc(b3) / two;
             self.cp_t[i].0 -= calc(b1);
             self.cp_t[i].1 -= calc(b2);
 
@@ -411,14 +412,14 @@ mod tests {
         let mut s = S::<f32>::new(-5.0, 5.0, 1);
         s.scale_y(-1.0);
         let p = Params {
-            learning_rate: 0.05,
+            learning_rate: 0.4,
             ..Params::default()
         };
 
         use rand::{rngs::StdRng, Rng, SeedableRng};
         let mut rng = StdRng::seed_from_u64(42);
 
-        for _ in 0..1900 {
+        for _ in 0..2000 {
             let target: f32 = rng.gen_range(-5.0..=5.0);
             let out = s.eval(target);
             let delta = out - target;

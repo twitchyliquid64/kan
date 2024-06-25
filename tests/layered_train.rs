@@ -79,7 +79,7 @@ fn transfer_through_spline() {
 
                 s.adjust(
                     &uvf::Params {
-                        learning_rate: 0.001,
+                        learning_rate: 0.0005,
                     },
                     input,
                     error_der * last.dtdy(intermediate),
@@ -121,20 +121,20 @@ fn transfer_through_spline() {
 ///                                       Spline 3 (learnable) --> Output
 ///
 /// With a desired function of: f(x, y) = x^2 + y^2.
-fn mul_network() {
-    let mut rng = StdRng::seed_from_u64(1);
-    let mut x = S::new(-60.0, 60.0, 1);
-    let mut y = S::new(-60.0, 60.0, 1);
-    let mut c = S::new(-1000.0, 1000.0, 1);
-    // x.dither_y(|| rng.gen_range(-2.0..2.0));
-    // y.dither_y(|| rng.gen_range(-2.0..2.0));
-    // c.dither_y(|| rng.gen_range(-2.0..2.0));
+fn sq_sum_network() {
+    let mut rng = StdRng::seed_from_u64(4);
+    let mut x = S::new(-60.0, 60.0, 5);
+    let mut y = S::new(-60.0, 60.0, 5);
+    let mut c = S::new(-7200.0, 7200.0, 1);
+    c.scale_y(-1.0);
+    x.dither_y(|| rng.gen_range(-2.0..2.0));
+    y.dither_y(|| rng.gen_range(-2.0..2.0));
+    c.dither_y(|| rng.gen_range(-2.0..2.0));
 
     let params = &uvf::Params {
-        learning_rate: 0.0001,
+        learning_rate: 0.07,
     };
-    make_video((1080, 720), "/tmp/vid_mul_network.mp4", |buff, n| {
-        // Render
+    make_video((1080, 720), "/tmp/vid_sq_sum_network.mp4", |buff, n| {
         let root =
             BitMapBackend::<plotters::backend::RGBPixel>::with_buffer_and_format(buff, (1080, 720))
                 .unwrap();
@@ -145,23 +145,22 @@ fn mul_network() {
         Spline::viz(c.clone()).title("c").render(&r[1]).unwrap();
 
         // Train
-        for _ in 0..10000 {
-            let x_input: f32 = rng.gen_range(-45.0..45.0);
-            let y_input: f32 = rng.gen_range(-45.0..45.0);
+        for _ in 0..17000 {
+            let x_input: f32 = rng.gen_range(-60.0..60.0);
+            let y_input: f32 = rng.gen_range(-60.0..60.0);
             let x_output = x.eval(x_input);
             let y_output = y.eval(y_input);
             let output = c.eval(x_output + y_output);
 
             let target = x_input.powi(2) + y_input.powi(2);
             let error_der = output - target;
-            let gradient = c.dtdy(x_output + y_output);
-            //c.adjust(params, x_output + y_output, error_der);
+            c.adjust(params, x_output + y_output, error_der);
 
-            x.adjust(params, x_input, error_der * c.dtdy(x_output) / x_output);
-            y.adjust(params, y_input, error_der * c.dtdy(y_output) / y_output);
+            x.adjust(params, x_input, error_der * c.dtdy(x_output + y_output));
+            y.adjust(params, y_input, error_der * c.dtdy(x_output + y_output));
         }
 
-        n < 250
+        n < 200
     })
     .unwrap();
 
