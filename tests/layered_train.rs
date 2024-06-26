@@ -154,10 +154,11 @@ fn sq_sum_network() {
 
             let target = x_input.powi(2) + y_input.powi(2);
             let error_der = output - target;
+            let c_der = c.dtdy(x_output + y_output);
             c.adjust(params, x_output + y_output, error_der);
 
-            x.adjust(params, x_input, error_der * c.dtdy(x_output + y_output));
-            y.adjust(params, y_input, error_der * c.dtdy(x_output + y_output));
+            x.adjust(params, x_input, error_der * c_der);
+            y.adjust(params, y_input, error_der * c_der);
         }
 
         n < 200
@@ -167,4 +168,86 @@ fn sq_sum_network() {
     const TEST_TOLERANCE: f32 = 0.5;
     assert_near!(c.eval(x.eval(4.0) + y.eval(4.0)), 32.0);
     assert_near!(c.eval(x.eval(2.0) + y.eval(1.0)), 5.0);
+}
+
+#[test]
+#[ignore]
+/// Configures a network like this:
+///   Input x--> Spline 1 (learnable) -->
+///   Input y--> Spline 2 (learnable) -->
+///                                       Spline 3 (learnable) --> Output
+///
+/// With a desired function of: f(x, y) = x/y
+///
+/// Lessons so far:
+///  - If domain constrains inputs then nothing will work - clamping breaks learning
+///  - If not enough parameters exist to express problem then also nothing will work
+fn div_network() {
+    let mut rng = StdRng::seed_from_u64(4);
+    let mut x = S::new(-70.0, 70.0, 4);
+    let mut y = S::new(-30.0, 30.0, 4);
+    let mut c = S::new(-200.0, 200.0, 3);
+
+    let params = &uvf::Params {
+        learning_rate: 0.00001,
+    };
+    make_video((1080, 720), "/tmp/vid_div_network.mp4", |buff, n| {
+        let root =
+            BitMapBackend::<plotters::backend::RGBPixel>::with_buffer_and_format(buff, (1080, 720))
+                .unwrap();
+        let r = root.into_drawing_area().split_evenly((2, 1));
+        let d = r[0].split_evenly((1, 2));
+        Spline::viz(x.clone())
+            .title("x")
+            .dtdy("dtdy")
+            .render(&d[0])
+            .unwrap();
+        Spline::viz(y.clone())
+            .title("y")
+            .dtdy("dtdy")
+            .render(&d[1])
+            .unwrap();
+        Spline::viz(c.clone())
+            .title("c")
+            .dtdy("dtdy")
+            .render(&r[1])
+            .unwrap();
+
+        // Train
+        for _ in 0..27000 {
+            let x_input: f32 = rng.gen_range(-60.0..60.0);
+            let y_input: f32 = rng.gen_range(-20.0..20.0);
+            if y_input < 0.002 && y_input > -0.002 {
+                continue;
+            }
+            let x_output = x.eval(x_input);
+            let y_output = y.eval(y_input);
+            let output = c.eval(x_output + y_output);
+
+            let target = x_input / y_input;
+            let error_der = output - target;
+            let c_der = c.dtdy(x_output + y_output);
+
+            println!(
+                "{:.2} / {:.2} = {:.2} ({:.2})\n\tder:   {:.5}\n\tc_der: {:.5}",
+                x_input,
+                y_input,
+                output,
+                target,
+                error_der,
+                error_der * c_der
+            );
+            c.adjust(params, x_output + y_output, error_der);
+
+            x.adjust(params, x_input, error_der * c_der);
+            y.adjust(params, y_input, error_der * c_der);
+        }
+
+        n < 350
+    })
+    .unwrap();
+
+    const TEST_TOLERANCE: f32 = 0.5;
+    assert_near!(c.eval(x.eval(8.0) + y.eval(2.0)), 4.0);
+    assert_near!(c.eval(x.eval(10.0) + y.eval(0.5)), 20.0);
 }

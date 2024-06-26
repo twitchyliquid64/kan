@@ -78,6 +78,25 @@ pub fn make_video<F: FnMut(&mut Vec<u8>, usize) -> bool>(
     Ok(())
 }
 
+fn datapoints<F: FnMut(f32) -> f32>(
+    mut eval: F,
+    t0: f32,
+    t1: f32,
+    points: &mut Vec<(f32, f32)>,
+) -> (f32, f32) {
+    let (mut y_min, mut y_max) = (f32::MAX, f32::MIN);
+    let step_dist = (t1 - t0) / points.len() as f32;
+    for (i, p) in points.iter_mut().enumerate() {
+        let t = t0 + i as f32 * step_dist;
+        let y = eval(t);
+        y_max = y_max.max(y);
+        y_min = y_min.min(y);
+        *p = (t, y);
+    }
+
+    (y_min, y_max)
+}
+
 #[derive(Debug, Default)]
 pub enum Title {
     #[default]
@@ -90,6 +109,7 @@ pub struct Spline {
     pub spline: S,
     pub extend_by: Option<f32>,
     pub title: Title,
+    pub dtdy_label: Option<&'static str>,
 }
 
 impl Spline {
@@ -98,6 +118,7 @@ impl Spline {
             spline,
             extend_by: None,
             title: Title::Default,
+            dtdy_label: None,
         }
     }
 
@@ -106,18 +127,9 @@ impl Spline {
         self
     }
 
-    pub fn datapoints(&self, t0: f32, t1: f32, points: &mut Vec<(f32, f32)>) -> (f32, f32) {
-        let (mut y_min, mut y_max) = (f32::MAX, f32::MIN);
-        let step_dist = (t1 - t0) / points.len() as f32;
-        for (i, p) in points.iter_mut().enumerate() {
-            let t = t0 + i as f32 * step_dist;
-            let y = self.spline.eval(t);
-            y_max = y_max.max(y);
-            y_min = y_min.min(y);
-            *p = (t, y);
-        }
-
-        (y_min, y_max)
+    pub fn dtdy(mut self, label: &'static str) -> Self {
+        self.dtdy_label = Some(label);
+        self
     }
 
     pub(crate) fn title_str(&self) -> String {
@@ -136,7 +148,7 @@ impl Spline {
     }
 
     pub(crate) fn label(&self) -> String {
-        "uwu spline".to_string()
+        "f(t)".to_string()
     }
 
     pub fn render<'a, DB: DrawingBackend>(
@@ -152,7 +164,7 @@ impl Spline {
         // Populate an array with 1024 (x, y) pairs over the entire domain,
         // keeping track of the min/max y value observed.
         let mut points = vec![(0f32, 0f32); DEFAULT_NUM_GRAPH_POINTS];
-        let (mut y_min, mut y_max) = self.datapoints(t0, t1, &mut points);
+        let (mut y_min, mut y_max) = datapoints(|t| self.spline.eval(t), t0, t1, &mut points);
 
         let control_points = self.spline.control_points();
         control_points.iter().for_each(|(_x, y)| {
@@ -160,20 +172,46 @@ impl Spline {
             y_max = y_max.max(*y);
         });
 
+        let dtdy = if let Some(_label) = self.dtdy_label {
+            let mut points = vec![(0f32, 0f32); DEFAULT_NUM_GRAPH_POINTS];
+            let (y_min, y_max) = datapoints(|t| self.spline.dtdy(t), t0, t1, &mut points);
+            Some((points, y_min, y_max))
+        } else {
+            None
+        };
+
         canvas.fill(&WHITE)?;
         let mut chart = ChartBuilder::on(&canvas)
             .caption(self.title_str(), ("sans-serif", 50).into_font())
             .margin(12)
             .x_label_area_size(30)
             .y_label_area_size(50)
-            .build_cartesian_2d(t0..t1, y_min..y_max)?;
+            .right_y_label_area_size(20)
+            .build_cartesian_2d(t0..t1, y_min..y_max)?
+            .set_secondary_coord(
+                t0..t1,
+                if let Some((_, dtdy_min, dtdy_max)) = dtdy {
+                    dtdy_min..dtdy_max
+                } else {
+                    y_min..y_max
+                },
+            );
 
         chart.configure_mesh().x_desc("t").y_desc("y").draw()?;
 
         // Insert the data into the chart, add a legend
-        chart.draw_series(LineSeries::new(points, &RED))?;
-        //.label(self.label())
-        //.legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+        chart
+            .draw_series(LineSeries::new(points, &RED))?
+            .label(self.label())
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
+        // If requested, plot the derivative
+        if let Some(label) = self.dtdy_label {
+            chart
+                .draw_series(LineSeries::new(dtdy.unwrap().0, &BLACK))?
+                .label(label)
+                .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
+        }
 
         // Plot the control points into the chart
         chart
@@ -239,6 +277,7 @@ mod tests {
             spline: s,
             extend_by: None,
             title: Title::Default,
+            dtdy_label: None,
         }
         .render(&bmb.into_drawing_area())
         .unwrap();
@@ -264,6 +303,7 @@ mod tests {
                 spline: s.clone(),
                 extend_by: None,
                 title: Title::Default,
+                dtdy_label: None,
             }
             .render(&root.into_drawing_area())
             .unwrap();
