@@ -185,12 +185,13 @@ fn sq_sum_network() {
 fn div_network() {
     let mut rng = StdRng::seed_from_u64(4);
     let mut x = S::new(-70.0, 70.0, 4);
-    let mut y = S::new(-30.0, 30.0, 4);
+    let mut y = S::new(-30.0, 30.0, 5);
     let mut c = S::new(-200.0, 200.0, 3);
 
     let params = &uvf::Params {
         learning_rate: 0.00001,
     };
+    let mut last: Option<(f32, f32, f32, f32)> = None;
     make_video((1080, 720), "/tmp/vid_div_network.mp4", |buff, n| {
         let root =
             BitMapBackend::<plotters::backend::RGBPixel>::with_buffer_and_format(buff, (1080, 720))
@@ -200,21 +201,24 @@ fn div_network() {
         Spline::viz(x.clone())
             .title("x")
             .dtdy("dtdy")
+            .highlight(last.map(|(t, _, e, c_der)| (t, x.eval(t) - e * c_der)))
             .render(&d[0])
             .unwrap();
         Spline::viz(y.clone())
             .title("y")
             .dtdy("dtdy")
+            .highlight(last.map(|(_, t, e, c_der)| (t, x.eval(t) - e * c_der)))
             .render(&d[1])
             .unwrap();
         Spline::viz(c.clone())
             .title("c")
             .dtdy("dtdy")
+            .highlight(last.map(|(xt, yt, e, c_der)| (xt + yt, x.eval(xt + yt) - e)))
             .render(&r[1])
             .unwrap();
 
         // Train
-        for _ in 0..27000 {
+        for _ in 0..15000 {
             let x_input: f32 = rng.gen_range(-60.0..60.0);
             let y_input: f32 = rng.gen_range(-20.0..20.0);
             if y_input < 0.002 && y_input > -0.002 {
@@ -241,9 +245,11 @@ fn div_network() {
 
             x.adjust(params, x_input, error_der * c_der);
             y.adjust(params, y_input, error_der * c_der);
+
+            last = Some((x_input, y_input, error_der, c_der))
         }
 
-        n < 350
+        n < 450
     })
     .unwrap();
 

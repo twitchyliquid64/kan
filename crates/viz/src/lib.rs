@@ -110,6 +110,7 @@ pub struct Spline {
     pub extend_by: Option<f32>,
     pub title: Title,
     pub dtdy_label: Option<&'static str>,
+    pub highlight: Option<(f32, f32)>,
 }
 
 impl Spline {
@@ -119,20 +120,29 @@ impl Spline {
             extend_by: None,
             title: Title::Default,
             dtdy_label: None,
+            highlight: None,
         }
     }
 
+    /// Sets the title of the graph.
     pub fn title(mut self, title: &'static str) -> Self {
         self.title = Title::Str(title);
         self
     }
 
+    /// Requests rendering of the derivative with the specified label.
     pub fn dtdy(mut self, label: &'static str) -> Self {
         self.dtdy_label = Some(label);
         self
     }
 
-    pub(crate) fn title_str(&self) -> String {
+    /// Requests highlighting of a specific (t, y) coordinate.
+    pub fn highlight(mut self, highlight: Option<(f32, f32)>) -> Self {
+        self.highlight = highlight;
+        self
+    }
+
+    fn title_str(&self) -> String {
         match self.title {
             Title::Default => {
                 let (t0, t1) = self.spline.t_domain();
@@ -147,10 +157,11 @@ impl Spline {
         }
     }
 
-    pub(crate) fn label(&self) -> String {
+    fn label(&self) -> String {
         "f(t)".to_string()
     }
 
+    /// Renders the spline graph to the provided drawing area.
     pub fn render<'a, DB: DrawingBackend>(
         self,
         canvas: &'a DrawingArea<DB, Shift>,
@@ -186,7 +197,7 @@ impl Spline {
             .margin(12)
             .x_label_area_size(30)
             .y_label_area_size(50)
-            .right_y_label_area_size(20)
+            .right_y_label_area_size(50)
             .build_cartesian_2d(t0..t1, y_min..y_max)?
             .set_secondary_coord(
                 t0..t1,
@@ -199,6 +210,10 @@ impl Spline {
 
         chart.configure_mesh().x_desc("t").y_desc("y").draw()?;
 
+        if dtdy.is_some() {
+            chart.configure_secondary_axes().y_desc("dt/dy").draw()?;
+        }
+
         // Insert the data into the chart, add a legend
         chart
             .draw_series(LineSeries::new(points, &RED))?
@@ -208,7 +223,7 @@ impl Spline {
         // If requested, plot the derivative
         if let Some(label) = self.dtdy_label {
             chart
-                .draw_series(LineSeries::new(dtdy.unwrap().0, &BLACK))?
+                .draw_secondary_series(LineSeries::new(dtdy.unwrap().0, &BLACK))?
                 .label(label)
                 .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLACK));
         }
@@ -222,6 +237,16 @@ impl Spline {
             )?
             .label("cp's")
             .legend(|(x, y)| Circle::new((x, y), 1, BLACK.filled()));
+
+        // If requested, highlight a specific point
+        if let Some((t, y)) = self.highlight {
+            chart.draw_series(PointSeries::of_element(
+                vec![(t, y)],
+                2,
+                &RED,
+                &|c, s, st| return EmptyElement::at(c) + Circle::new((0, 0), s, st.stroke_width(1)),
+            ))?;
+        }
 
         chart
             .configure_series_labels()
@@ -278,6 +303,7 @@ mod tests {
             extend_by: None,
             title: Title::Default,
             dtdy_label: None,
+            highlight: None,
         }
         .render(&bmb.into_drawing_area())
         .unwrap();
@@ -304,6 +330,7 @@ mod tests {
                 extend_by: None,
                 title: Title::Default,
                 dtdy_label: None,
+                highlight: None,
             }
             .render(&root.into_drawing_area())
             .unwrap();
