@@ -1,6 +1,6 @@
 use plotters::coord::Shift;
 use plotters::prelude::*;
-use uvf::S;
+use uvf::Bez;
 
 const DEFAULT_NUM_GRAPH_POINTS: usize = 115;
 
@@ -106,7 +106,7 @@ pub enum Title {
 
 /// Visualizes a spline.
 pub struct Spline {
-    pub spline: S,
+    pub spline: Bez,
     pub extend_by: Option<f32>,
     pub title: Title,
     pub dtdy_label: Option<&'static str>,
@@ -114,7 +114,7 @@ pub struct Spline {
 }
 
 impl Spline {
-    pub fn viz(spline: S) -> Self {
+    pub fn viz(spline: Bez) -> Self {
         Self {
             spline,
             extend_by: None,
@@ -273,7 +273,7 @@ mod tests {
         )
         .unwrap();
 
-        Spline::viz(uvf::S::identity())
+        Spline::viz(uvf::Bez::identity())
             .render(&bmb.into_drawing_area())
             .unwrap();
     }
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     #[ignore]
     fn spline_viz_training() {
-        let mut s = uvf::S::identity();
+        let mut s = uvf::Bez::identity();
 
         // Toy training loop: f(-10000) = 10000, f(0) = 0, f(10000) = 10000
         for _ in 0..5000 {
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     #[ignore]
     fn spline_viz_video_smoketest() {
-        let mut s = uvf::S::new(-15000.0, 15000.0, 3);
+        let mut s = uvf::Bez::new(-15000.0, 15000.0, 3);
         let p = uvf::Params {
             learning_rate: 0.006,
             ..uvf::Params::default()

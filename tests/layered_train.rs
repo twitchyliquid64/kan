@@ -1,7 +1,7 @@
 use plotters::prelude::*;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
-use uvf::S;
+use uvf::Bez;
 use viz::{make_video, Spline};
 
 use uvf::assert_near;
@@ -33,8 +33,8 @@ use uvf::assert_near;
 /// through spline 1.
 fn transfer_through_spline() {
     let mut rng = StdRng::seed_from_u64(42);
-    let mut s = S::new(-2000.0, 2000.0, 1);
-    let mut last = S::identity_smol();
+    let mut s = Bez::new(-2000.0, 2000.0, 1);
+    let mut last = Bez::identity_smol();
     last.dither_y(|| rng.gen_range(-260.0..260.0));
     last.scale_y(18.0);
 
@@ -123,9 +123,9 @@ fn transfer_through_spline() {
 /// With a desired function of: f(x, y) = x^2 + y^2.
 fn sq_sum_network() {
     let mut rng = StdRng::seed_from_u64(4);
-    let mut x = S::new(-60.0, 60.0, 5);
-    let mut y = S::new(-60.0, 60.0, 5);
-    let mut c = S::new(-7200.0, 7200.0, 1);
+    let mut x = Bez::new(-60.0, 60.0, 5);
+    let mut y = Bez::new(-60.0, 60.0, 5);
+    let mut c = Bez::new(-7200.0, 7200.0, 1);
     c.scale_y(-1.0);
     x.dither_y(|| rng.gen_range(-2.0..2.0));
     y.dither_y(|| rng.gen_range(-2.0..2.0));
@@ -185,9 +185,9 @@ fn sq_sum_network() {
 ///  - When the values + dtdy yeet off into forever, it doesnt have enough grid points to learn.
 fn div_network() {
     let mut rng = StdRng::seed_from_u64(4);
-    let mut x = S::new(0.7, 3.5, 3);
-    let mut y = S::new(0.7, 3.5, 3);
-    let mut c = S::new(0.5, 7.5, 3);
+    let mut x = Bez::new(0.7, 3.5, 3);
+    let mut y = Bez::new(0.7, 3.5, 3);
+    let mut c = Bez::new(0.5, 7.5, 3);
 
     let params = &uvf::Params {
         learning_rate: 0.02,

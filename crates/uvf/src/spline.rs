@@ -18,12 +18,12 @@ impl Default for Params {
     }
 }
 
-/// S implements interpolation between a series of control points,
+/// Bez implements bezier interpolation between a series of control points,
 /// defined in input/parameter space (denoted `t`) and output space (denoted `y`).
 ///
 /// An empty spline is considered invalid and may result in panics.
 #[derive(Debug, Clone)]
-pub struct S<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
+pub struct Bez<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
     /// lower_t describes the lower t value of the ith interval.
     ///
     /// Values of cp_t must always be ascending.
@@ -34,7 +34,9 @@ pub struct S<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
     cp_t: SmallVec<[(V, V); M]>,
 }
 
-impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + FromPrimitive> S<V> {
+impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + FromPrimitive>
+    Bez<V>
+{
     // TODO: TESTS
     pub fn new(min: V, max: V, segments: usize) -> Self {
         let per_segment = (max - min) / V::from(segments).unwrap();
@@ -131,7 +133,7 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
                 //     i, t0, t3, t, y0, y1, y2, y3
                 // );
 
-                let (b0, b1, b2, b3) = S::basis_functions(t);
+                let (b0, b1, b2, b3) = Bez::basis_functions(t);
                 let out = (b0 * y0) + (b1 * y1) + (b2 * y2) + (b3 * y3);
 
                 // println!(" Out:\t{:?}", out);
@@ -255,8 +257,8 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
             // Use the basis function to apply the error to each parameter.
             let lr = V::from_f32(params.learning_rate).unwrap();
             let t = normalize(t, t0, t3);
-            let (b0, b1, b2, b3) = S::basis_functions(t);
-            let calc = |b: V| error * S::grad_clamp(b * lr);
+            let (b0, b1, b2, b3) = Bez::basis_functions(t);
+            let calc = |b: V| error * Bez::grad_clamp(b * lr);
 
             let two = V::one() + V::one(); // CP's on interval boundaries get updated twice as frequently
             self.lower_y[i] -= calc(b0) / two;
@@ -347,60 +349,60 @@ mod tests {
     #[test]
     fn t_domain_identity() {
         let max = 2f32.powi(POW_DOMAIN);
-        assert_near!(S::<f32>::identity().t_domain().0, -max);
-        assert_near!(S::<f32>::identity().t_domain().1, max);
+        assert_near!(Bez::<f32>::identity().t_domain().0, -max);
+        assert_near!(Bez::<f32>::identity().t_domain().1, max);
     }
 
     #[test]
     fn eval_identity_zero() {
-        assert_near!(S::<f32>::identity().eval(0.0), 0.0);
-        assert_near!(S::<f32>::identity().eval(-0.0), -0.0);
+        assert_near!(Bez::<f32>::identity().eval(0.0), 0.0);
+        assert_near!(Bez::<f32>::identity().eval(-0.0), -0.0);
 
-        assert_near!(S::<f32>::identity_smol().eval(0.0), 0.0);
-        assert_near!(S::<f32>::identity_smol().eval(-0.0), -0.0);
+        assert_near!(Bez::<f32>::identity_smol().eval(0.0), 0.0);
+        assert_near!(Bez::<f32>::identity_smol().eval(-0.0), -0.0);
     }
 
     #[test]
     fn eval_identity_one() {
-        assert_near!(S::<f32>::identity().eval(1.0), 1.0);
-        assert_near!(S::<f32>::identity().eval(-1.0), -1.0);
+        assert_near!(Bez::<f32>::identity().eval(1.0), 1.0);
+        assert_near!(Bez::<f32>::identity().eval(-1.0), -1.0);
 
         const TEST_TOLERANCE: f32 = 0.5;
-        assert_near!(S::<f32>::identity_smol().eval(1.0), 1.0);
-        assert_near!(S::<f32>::identity_smol().eval(-1.0), -1.0);
+        assert_near!(Bez::<f32>::identity_smol().eval(1.0), 1.0);
+        assert_near!(Bez::<f32>::identity_smol().eval(-1.0), -1.0);
     }
 
     #[test]
     fn eval_identity_five() {
-        assert_near!(S::<f32>::identity().eval(5.0), 5.0);
-        assert_near!(S::<f32>::identity().eval(-5.0), -5.0);
+        assert_near!(Bez::<f32>::identity().eval(5.0), 5.0);
+        assert_near!(Bez::<f32>::identity().eval(-5.0), -5.0);
 
         const TEST_TOLERANCE: f32 = 0.8;
-        assert_near!(S::<f32>::identity_smol().eval(5.0), 5.0);
-        assert_near!(S::<f32>::identity_smol().eval(-5.0), -5.0);
+        assert_near!(Bez::<f32>::identity_smol().eval(5.0), 5.0);
+        assert_near!(Bez::<f32>::identity_smol().eval(-5.0), -5.0);
     }
 
     #[test]
     fn eval_identity_about_bounds() {
         let max = 2f32.powi(POW_DOMAIN);
         // at the bounds
-        assert_near!(S::<f32>::identity().eval(max), max);
-        assert_near!(S::<f32>::identity().eval(-max), -max);
+        assert_near!(Bez::<f32>::identity().eval(max), max);
+        assert_near!(Bez::<f32>::identity().eval(-max), -max);
 
-        assert_near!(S::<f32>::identity().eval(max - 10.73), max - 10.729);
-        assert_near!(S::<f32>::identity().eval(10.75 - max), 10.748 - max);
+        assert_near!(Bez::<f32>::identity().eval(max - 10.73), max - 10.729);
+        assert_near!(Bez::<f32>::identity().eval(10.75 - max), 10.748 - max);
     }
 
     #[test]
     fn eval_identity_clamped() {
         let max = 2f32.powi(POW_DOMAIN);
-        assert_near!(S::<f32>::identity().eval(500000.0), max);
-        assert_near!(S::<f32>::identity().eval(-500000.0), -max);
+        assert_near!(Bez::<f32>::identity().eval(500000.0), max);
+        assert_near!(Bez::<f32>::identity().eval(-500000.0), -max);
     }
 
     #[test]
     fn adjust_trivial() {
-        let mut s = S::<f32>::new(-5.0, 5.0, 2);
+        let mut s = Bez::<f32>::new(-5.0, 5.0, 2);
         let p = Params {
             learning_rate: 0.05,
             ..Params::default()
@@ -421,7 +423,7 @@ mod tests {
 
     #[test]
     fn adjust_trivial_invert() {
-        let mut s = S::<f32>::new(-5.0, 5.0, 1);
+        let mut s = Bez::<f32>::new(-5.0, 5.0, 1);
         s.scale_y(-1.0);
         let p = Params {
             learning_rate: 0.4,
@@ -446,7 +448,7 @@ mod tests {
 
     #[test]
     fn adjust_nontrivial() {
-        let mut s = S::<f32>::new(-20000.0, 20000.0, 4);
+        let mut s = Bez::<f32>::new(-20000.0, 20000.0, 4);
         let p = Params {
             learning_rate: 0.1,
             ..Params::default()
@@ -480,9 +482,9 @@ mod tests {
     /// With a desired function of: f(x, y) = x/y, domain [1, 3]
     fn adjust_div_network() {
         let mut rng = StdRng::seed_from_u64(4);
-        let mut x = S::new(0.7, 3.5, 3);
-        let mut y = S::new(0.7, 3.5, 3);
-        let mut c = S::new(0.5, 7.5, 3);
+        let mut x = Bez::new(0.7, 3.5, 3);
+        let mut y = Bez::new(0.7, 3.5, 3);
+        let mut c = Bez::new(0.5, 7.5, 3);
 
         let params = &Params { learning_rate: 0.1 };
 
@@ -515,24 +517,24 @@ mod tests {
 
     #[test]
     fn dtdy_identity() {
-        assert_near!(S::<f32>::identity().dtdy(1.0), 1.0);
-        assert_near!(S::<f32>::identity().dtdy(-1.0), 1.0);
+        assert_near!(Bez::<f32>::identity().dtdy(1.0), 1.0);
+        assert_near!(Bez::<f32>::identity().dtdy(-1.0), 1.0);
 
         const TEST_TOLERANCE: f32 = 0.5;
-        assert_near!(S::<f32>::identity_smol().dtdy(1.0), 1.0);
-        assert_near!(S::<f32>::identity_smol().dtdy(-1.0), 1.0);
+        assert_near!(Bez::<f32>::identity_smol().dtdy(1.0), 1.0);
+        assert_near!(Bez::<f32>::identity_smol().dtdy(-1.0), 1.0);
     }
 
     #[test]
     fn dtdy_linear() {
         // Make the spline double the input: f(x) = 2x.
-        let mut s = S::<f32>::identity();
+        let mut s = Bez::<f32>::identity();
         s.scale_y(2.0);
         assert_near!(s.dtdy(1.0), 2.0);
         assert_near!(s.dtdy(0.0), 2.0);
         assert_near!(s.dtdy(-1.0), 2.0);
         const TEST_TOLERANCE: f32 = 0.5;
-        let mut s = S::<f32>::identity_smol();
+        let mut s = Bez::<f32>::identity_smol();
         s.scale_y(2.0);
         assert_near!(s.dtdy(1.0), 2.0);
         assert_near!(s.dtdy(0.0), 2.0);
@@ -542,7 +544,7 @@ mod tests {
     #[test]
     fn scale_y() {
         // Make the spline negate the input: f(x) = -x.
-        let mut s = S::<f32>::identity();
+        let mut s = Bez::<f32>::identity();
         s.scale_y(-1.0);
         assert_near!(s.eval(1.0), -1.0);
         assert_near!(s.eval(0.0), 0.0);
@@ -551,19 +553,19 @@ mod tests {
 
     #[test]
     fn dt_basis_functions() {
-        let (b0, b1, b2, b3) = S::dt_basis_functions(0.0);
+        let (b0, b1, b2, b3) = Bez::dt_basis_functions(0.0);
         assert_near!(b0, -3.0);
         assert_near!(b1, 3.0);
         assert_near!(b2, 0.0);
         assert_near!(b3, 0.0);
 
-        let (b0, b1, b2, b3) = S::dt_basis_functions(0.5);
+        let (b0, b1, b2, b3) = Bez::dt_basis_functions(0.5);
         assert_near!(b0, -0.75);
         assert_near!(b1, -0.75);
         assert_near!(b2, 0.75);
         assert_near!(b3, 0.75);
 
-        let (b0, b1, b2, b3) = S::dt_basis_functions(1.0);
+        let (b0, b1, b2, b3) = Bez::dt_basis_functions(1.0);
         assert_near!(b0, 0.0);
         assert_near!(b1, 0.0);
         assert_near!(b2, -3.0);
