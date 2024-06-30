@@ -264,9 +264,20 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
             self.cp_t[i].0 -= calc(b1);
             self.cp_t[i].1 -= calc(b2);
 
+            // let two = V::one() + V::one();
+
+            // Lets try moving the adjacent control point too.
+            // if i + 1 < self.cp_t.len() {
+            //     let amt = self.lower_y[i + 1] - self.cp_t[i].1;
+            //     self.cp_t[i + 1].0 = (self.cp_t[i + 1].0 + amt) / two;
+            // }
+            // if i > 0 {
+            //     let amt = self.cp_t[i].0 - self.lower_y[i];
+            //     self.cp_t[i - 1].1 = (self.cp_t[i - 1].1 - amt) / two;
+            // }
+
             // // For the sake of learning smooth functions, normalize the sister control point
             // // across the interval to have the same tangent as well.
-            // let two = V::one() + V::one();
             // if i + 1 < self.cp_t.len() {
             //     let mix = ((self.lower_y[i + 1] - self.cp_t[i].1)
             //         + (self.cp_t[i + 1].0 - self.lower_y[i + 1]))
@@ -320,6 +331,7 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
 mod tests {
     use super::*;
     use crate::assert_near;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     const TEST_TOLERANCE: f32 = 1.0e-6;
 
@@ -457,6 +469,48 @@ mod tests {
         assert_near!(s.eval(-10000.0), 10000.0);
         assert_near!(s.eval(0.0), 0.0);
         assert_near!(s.eval(10000.0), -10000.0);
+    }
+
+    #[test]
+    /// Configures a network like this:
+    ///   Input x--> Spline 1 (learnable) -->
+    ///   Input y--> Spline 2 (learnable) -->
+    ///                                       Spline 3 (learnable) --> Output
+    ///
+    /// With a desired function of: f(x, y) = x/y, domain [1, 3]
+    fn adjust_div_network() {
+        let mut rng = StdRng::seed_from_u64(4);
+        let mut x = S::new(0.7, 3.5, 3);
+        let mut y = S::new(0.7, 3.5, 3);
+        let mut c = S::new(0.5, 7.5, 3);
+
+        let params = &Params { learning_rate: 0.1 };
+
+        // Train
+        for _ in 0..95000 {
+            let x_input: f32 = rng.gen_range(1.0..3.0);
+            let y_input: f32 = rng.gen_range(1.0..3.0);
+            let x_output = x.eval(x_input);
+            let y_output = y.eval(y_input);
+            let output = c.eval(x_output + y_output);
+
+            let target = x_input / y_input;
+            let error_der = output - target;
+            let c_der = c.dtdy(x_output + y_output);
+
+            c.adjust(params, x_output + y_output, error_der);
+            x.adjust(params, x_input, error_der * c_der);
+            y.adjust(params, y_input, error_der * c_der);
+        }
+
+        const TEST_TOLERANCE: f32 = 0.1;
+        assert_near!(c.eval(x.eval(2.0) + y.eval(2.0)), 1.0);
+        assert_near!(c.eval(x.eval(3.0) + y.eval(3.0)), 1.0);
+        assert_near!(c.eval(x.eval(1.0) + y.eval(1.0)), 1.0);
+        assert_near!(c.eval(x.eval(3.0) + y.eval(2.0)), 1.5);
+        assert_near!(c.eval(x.eval(2.0) + y.eval(1.0)), 2.0);
+        assert_near!(c.eval(x.eval(3.0) + y.eval(1.0)), 3.0);
+        assert_near!(c.eval(x.eval(1.0) + y.eval(2.0)), 0.5);
     }
 
     #[test]

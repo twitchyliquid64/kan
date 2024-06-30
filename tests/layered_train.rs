@@ -182,14 +182,15 @@ fn sq_sum_network() {
 /// Lessons so far:
 ///  - If domain constrains inputs then nothing will work - clamping breaks learning
 ///  - If not enough parameters exist to express problem then also nothing will work
+///  - When the values + dtdy yeet off into forever, it doesnt have enough grid points to learn.
 fn div_network() {
     let mut rng = StdRng::seed_from_u64(4);
-    let mut x = S::new(-70.0, 70.0, 4);
-    let mut y = S::new(-30.0, 30.0, 5);
-    let mut c = S::new(-200.0, 200.0, 3);
+    let mut x = S::new(0.7, 3.5, 3);
+    let mut y = S::new(0.7, 3.5, 3);
+    let mut c = S::new(0.5, 7.5, 3);
 
     let params = &uvf::Params {
-        learning_rate: 0.00001,
+        learning_rate: 0.02,
     };
     let mut last: Option<(f32, f32, f32, f32)> = None;
     make_video((1080, 720), "/tmp/vid_div_network.mp4", |buff, n| {
@@ -207,20 +208,20 @@ fn div_network() {
         Spline::viz(y.clone())
             .title("y")
             .dtdy("dtdy")
-            .highlight(last.map(|(_, t, e, c_der)| (t, x.eval(t) - e * c_der)))
+            .highlight(last.map(|(_, t, e, c_der)| (t, y.eval(t) - e * c_der)))
             .render(&d[1])
             .unwrap();
         Spline::viz(c.clone())
             .title("c")
             .dtdy("dtdy")
-            .highlight(last.map(|(xt, yt, e, c_der)| (xt + yt, x.eval(xt + yt) - e)))
+            .highlight(last.map(|(xt, yt, e, c_der)| (xt + yt, c.eval(xt + yt) - e)))
             .render(&r[1])
             .unwrap();
 
         // Train
         for _ in 0..15000 {
-            let x_input: f32 = rng.gen_range(-60.0..60.0);
-            let y_input: f32 = rng.gen_range(-20.0..20.0);
+            let x_input: f32 = rng.gen_range(1.0..3.0);
+            let y_input: f32 = rng.gen_range(1.0..3.0);
             if y_input < 0.002 && y_input > -0.002 {
                 continue;
             }
@@ -232,15 +233,15 @@ fn div_network() {
             let error_der = output - target;
             let c_der = c.dtdy(x_output + y_output);
 
-            println!(
-                "{:.2} / {:.2} = {:.2} ({:.2})\n\tder:   {:.5}\n\tc_der: {:.5}",
-                x_input,
-                y_input,
-                output,
-                target,
-                error_der,
-                error_der * c_der
-            );
+            // println!(
+            //     "{:.2} / {:.2} = {:.2} ({:.2})\n\tder:   {:.5}\n\tc_der: {:.5}",
+            //     x_input,
+            //     y_input,
+            //     output,
+            //     target,
+            //     error_der,
+            //     error_der * c_der
+            // );
             c.adjust(params, x_output + y_output, error_der);
 
             x.adjust(params, x_input, error_der * c_der);
@@ -249,11 +250,16 @@ fn div_network() {
             last = Some((x_input, y_input, error_der, c_der))
         }
 
-        n < 450
+        n < 250
     })
     .unwrap();
 
-    const TEST_TOLERANCE: f32 = 0.5;
-    assert_near!(c.eval(x.eval(8.0) + y.eval(2.0)), 4.0);
-    assert_near!(c.eval(x.eval(10.0) + y.eval(0.5)), 20.0);
+    const TEST_TOLERANCE: f32 = 0.1;
+    assert_near!(c.eval(x.eval(2.0) + y.eval(2.0)), 1.0);
+    assert_near!(c.eval(x.eval(3.0) + y.eval(3.0)), 1.0);
+    assert_near!(c.eval(x.eval(1.0) + y.eval(1.0)), 1.0);
+    assert_near!(c.eval(x.eval(3.0) + y.eval(2.0)), 1.5);
+    assert_near!(c.eval(x.eval(2.0) + y.eval(1.0)), 2.0);
+    assert_near!(c.eval(x.eval(3.0) + y.eval(1.0)), 3.0);
+    assert_near!(c.eval(x.eval(1.0) + y.eval(2.0)), 0.5);
 }
