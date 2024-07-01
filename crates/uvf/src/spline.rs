@@ -5,19 +5,6 @@ use smallvec::{smallvec, SmallVec};
 const DEFAULT_MAX_CURVES: usize = 6;
 const POW_DOMAIN: i32 = 15;
 
-/// Describes the hyperparameters when training a spline.
-pub struct Params {
-    pub learning_rate: f32,
-}
-
-impl Default for Params {
-    fn default() -> Self {
-        Self {
-            learning_rate: 0.01,
-        }
-    }
-}
-
 /// Bez implements bezier interpolation between a series of control points,
 /// defined in input/parameter space (denoted `t`) and output space (denoted `y`).
 ///
@@ -34,9 +21,7 @@ pub struct Bez<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
     cp_t: SmallVec<[(V, V); M]>,
 }
 
-impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + FromPrimitive>
-    Bez<V>
-{
+impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> Bez<V> {
     // TODO: TESTS
     pub fn new(min: V, max: V, segments: usize) -> Self {
         let per_segment = (max - min) / V::from(segments).unwrap();
@@ -240,7 +225,7 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
     }
 
     /// Adjusts the spline based on some error, and the input value.
-    pub fn adjust(&mut self, params: &Params, t: V, error: V) {
+    pub fn adjust(&mut self, params: &crate::Params, t: V, error: V) {
         if !error.is_normal() {
             println!("skipping non-normal error {:?}", error);
             return;
@@ -329,10 +314,26 @@ impl<V: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + Fr
     }
 }
 
+impl<V> crate::Trainable<V> for Bez<V>
+where
+    V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive,
+{
+    fn eval(&self, t: V) -> V {
+        Bez::eval(self, t)
+    }
+    fn dtdy(&self, t: V) -> V {
+        Bez::dtdy(self, t)
+    }
+    fn adjust(&mut self, params: &crate::Params, t: V, error: V) {
+        Bez::adjust(self, params, t, error);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::assert_near;
+    use crate::Params;
     use rand::{rngs::StdRng, Rng, SeedableRng};
 
     const TEST_TOLERANCE: f32 = 1.0e-6;
