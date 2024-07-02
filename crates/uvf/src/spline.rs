@@ -1,5 +1,4 @@
-use crate::{normalize, normalize_dpdt};
-use num_traits::{float::Float, FromPrimitive};
+use crate::{normalize, normalize_dpdt, BaseNum};
 use smallvec::{smallvec, SmallVec};
 
 const DEFAULT_MAX_CURVES: usize = 6;
@@ -10,7 +9,7 @@ const POW_DOMAIN: i32 = 15;
 ///
 /// An empty spline is considered invalid and may result in panics.
 #[derive(Debug, Clone)]
-pub struct Bez<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
+pub struct Bez<V: BaseNum = f32, const M: usize = DEFAULT_MAX_CURVES> {
     /// lower_t describes the lower t value of the ith interval.
     ///
     /// Values of cp_t must always be ascending.
@@ -21,7 +20,7 @@ pub struct Bez<V: Float = f32, const M: usize = DEFAULT_MAX_CURVES> {
     cp_t: SmallVec<[(V, V); M]>,
 }
 
-impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> Bez<V> {
+impl<V: BaseNum> Bez<V> {
     // TODO: TESTS
     pub fn new(min: V, max: V, segments: usize) -> Self {
         let per_segment = (max - min) / V::from(segments).unwrap();
@@ -316,7 +315,7 @@ impl<V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> Bez<V> {
 
 impl<V> crate::Trainable<V> for Bez<V>
 where
-    V: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive,
+    V: BaseNum,
 {
     fn eval(&self, t: V) -> V {
         Bez::eval(self, t)
@@ -329,33 +328,34 @@ where
     }
 }
 
+impl<V> Default for Bez<V>
+where
+    V: BaseNum,
+{
+    fn default() -> Self {
+        Bez::identity()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::assert_near;
     use crate::Params;
+    use num_traits::float::Float;
     use rand::{rngs::StdRng, Rng, SeedableRng};
 
     const TEST_TOLERANCE: f32 = 1.0e-6;
 
     #[test]
-    fn _normalize() {
-        assert_near!(normalize(1f32, 1.0, 2.0), 0.0);
-        assert_near!(normalize(2f32, 1.0, 2.0), 1.0);
-        assert_near!(normalize(2f32, 1.0, 3.0), 0.5);
-        assert_near!(normalize(3f32, 1.0, 5.0), 0.5);
-        assert_near!(normalize(4f32, 1.0, 5.0), 0.75);
-    }
-
-    #[test]
-    fn t_domain_identity() {
+    fn bez_t_domain_identity() {
         let max = 2f32.powi(POW_DOMAIN);
         assert_near!(Bez::<f32>::identity().t_domain().0, -max);
         assert_near!(Bez::<f32>::identity().t_domain().1, max);
     }
 
     #[test]
-    fn eval_identity_zero() {
+    fn bez_eval_identity_zero() {
         assert_near!(Bez::<f32>::identity().eval(0.0), 0.0);
         assert_near!(Bez::<f32>::identity().eval(-0.0), -0.0);
 
@@ -364,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_identity_one() {
+    fn bez_eval_identity_one() {
         assert_near!(Bez::<f32>::identity().eval(1.0), 1.0);
         assert_near!(Bez::<f32>::identity().eval(-1.0), -1.0);
 
@@ -374,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_identity_five() {
+    fn bez_eval_identity_five() {
         assert_near!(Bez::<f32>::identity().eval(5.0), 5.0);
         assert_near!(Bez::<f32>::identity().eval(-5.0), -5.0);
 
@@ -384,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_identity_about_bounds() {
+    fn bez_eval_identity_about_bounds() {
         let max = 2f32.powi(POW_DOMAIN);
         // at the bounds
         assert_near!(Bez::<f32>::identity().eval(max), max);
@@ -395,14 +395,14 @@ mod tests {
     }
 
     #[test]
-    fn eval_identity_clamped() {
+    fn bez_eval_identity_clamped() {
         let max = 2f32.powi(POW_DOMAIN);
         assert_near!(Bez::<f32>::identity().eval(500000.0), max);
         assert_near!(Bez::<f32>::identity().eval(-500000.0), -max);
     }
 
     #[test]
-    fn adjust_trivial() {
+    fn bez_adjust_trivial() {
         let mut s = Bez::<f32>::new(-5.0, 5.0, 2);
         let p = Params {
             learning_rate: 0.05,
@@ -423,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn adjust_trivial_invert() {
+    fn bez_adjust_trivial_invert() {
         let mut s = Bez::<f32>::new(-5.0, 5.0, 1);
         s.scale_y(-1.0);
         let p = Params {
@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn adjust_nontrivial() {
+    fn bez_adjust_nontrivial() {
         let mut s = Bez::<f32>::new(-20000.0, 20000.0, 4);
         let p = Params {
             learning_rate: 0.1,
@@ -481,7 +481,7 @@ mod tests {
     ///                                       Spline 3 (learnable) --> Output
     ///
     /// With a desired function of: f(x, y) = x/y, domain [1, 3]
-    fn adjust_div_network() {
+    fn bez_adjust_div_network() {
         let mut rng = StdRng::seed_from_u64(4);
         let mut x = Bez::new(0.7, 3.5, 3);
         let mut y = Bez::new(0.7, 3.5, 3);
@@ -517,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn dtdy_identity() {
+    fn bez_dtdy_identity() {
         assert_near!(Bez::<f32>::identity().dtdy(1.0), 1.0);
         assert_near!(Bez::<f32>::identity().dtdy(-1.0), 1.0);
 
@@ -527,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn dtdy_linear() {
+    fn bez_dtdy_linear() {
         // Make the spline double the input: f(x) = 2x.
         let mut s = Bez::<f32>::identity();
         s.scale_y(2.0);
@@ -543,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn scale_y() {
+    fn bez_scale_y() {
         // Make the spline negate the input: f(x) = -x.
         let mut s = Bez::<f32>::identity();
         s.scale_y(-1.0);
@@ -553,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn dt_basis_functions() {
+    fn bez_dt_basis_functions() {
         let (b0, b1, b2, b3) = Bez::dt_basis_functions(0.0);
         assert_near!(b0, -3.0);
         assert_near!(b1, 3.0);
