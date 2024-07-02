@@ -11,7 +11,7 @@ const DEFAULT_NUM_GRAPH_POINTS: usize = 115;
 /// frame.
 ///
 /// The video is encoded as an MP4 at 30 fps.
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "windows"))]
 pub fn make_video<F: FnMut(&mut Vec<u8>, usize) -> bool>(
     size: (usize, usize),
     out_path: &str,
