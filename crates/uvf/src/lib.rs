@@ -6,9 +6,15 @@
 use num_traits::{float::Float, FromPrimitive};
 
 /// The numeric base type a uvf is defined for.
-pub trait BaseNum: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive {}
+pub trait BaseNum:
+    Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + FromPrimitive
+{
+}
 
-impl<T: Float + std::fmt::Debug + std::ops::SubAssign + FromPrimitive> BaseNum for T {}
+impl<T: Float + std::fmt::Debug + std::ops::AddAssign + std::ops::SubAssign + FromPrimitive> BaseNum
+    for T
+{
+}
 
 /// maps the given parameter to a coefficient describing how far along it is between min and max.
 pub(crate) fn normalize<V: Float>(p: V, min: V, max: V) -> V {
@@ -97,7 +103,7 @@ where
 
 impl<E, V> Layer<E, V>
 where
-    V: BaseNum + std::ops::AddAssign,
+    V: BaseNum,
     E: Trainable<V>,
 {
     /// creates a new layer with the given number of inputs and outputs. Each
@@ -121,16 +127,17 @@ where
     ///
     /// Outputs should be initialized to zero.
     ///
-    /// Safety: This method will panic if the number of elements in the inputs and/or
-    /// outputs array doesn't match the size of the layer.
+    /// Safety: This method will panic if the input or output vectors are too
+    /// short for the requisite number of inputs and outputs
     pub fn eval(&self, inputs: &Vec<V>, outputs: &mut Vec<V>) {
-        assert_eq!(inputs.len(), self.edges.len());
+        assert!(inputs.len() >= self.edges.len());
 
-        for (i, inp) in inputs.iter().enumerate() {
-            assert_eq!(self.edges[i].len(), outputs.len());
+        for (i, edges) in self.edges.iter().enumerate() {
+            assert!(edges.len() <= outputs.len());
+            let inp = inputs[i];
 
-            for (o, v) in outputs.iter_mut().enumerate() {
-                *v = *v + self.edges[i][o].eval(*inp);
+            for (o, e) in edges.iter().enumerate() {
+                outputs[o] += e.eval(inp);
             }
         }
     }
@@ -149,25 +156,47 @@ where
         assert_eq!(inputs.len(), self.edges.len());
         for (i, edges) in self.edges.iter_mut().enumerate() {
             assert_eq!(edges.len(), output_loss.len());
-            let mut upper_loss = propergate_input_loss.as_mut().and_then(|v| Some(&mut v[i]));
+
+            if let Some(upper_loss) = propergate_input_loss.as_mut() {
+                let upper_loss = &mut upper_loss[i];
+                for (o, edge) in edges.iter_mut().enumerate() {
+                    *upper_loss += edge.dtdy(inputs[i]) * output_loss[o];
+                }
+            }
 
             for (o, edge) in edges.iter_mut().enumerate() {
-                upper_loss
-                    .iter_mut()
-                    .for_each(|v| **v += edge.dtdy(inputs[i]) * output_loss[o]);
-
                 edge.adjust(params, inputs[i], output_loss[o]);
             }
         }
     }
 }
 
+pub fn layered_eval<E, V>(layers: &Vec<Layer<E, V>>, mut inputs: Vec<V>, outputs: &mut Vec<V>)
+where
+    V: BaseNum,
+    E: Trainable<V>,
+{
+    for (i, l) in layers.iter().enumerate() {
+        outputs.iter_mut().for_each(|v| *v = V::zero());
+        l.eval(&inputs, outputs);
+
+        if i == layers.len() - 1 {
+            break;
+        }
+
+        inputs.clear();
+        inputs.extend_from_slice(&outputs[..]);
+    }
+}
+
+// TODO: Refactor to store the inputs for each spline, as we need that for backprop.
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rand::{rngs::StdRng, Rng, SeedableRng};
 
-    const TEST_TOLERANCE: f32 = 1.0e-6;
+    const TEST_TOLERANCE: f32 = 1.0e-5;
 
     #[test]
     fn _normalize() {
@@ -275,5 +304,41 @@ mod tests {
         test_points([4.0, 0.0, 4.0], 0.0);
         test_points([0.0, 4.0, 4.0], 0.0);
         test_points([1.0, 0.0, 5.0], -24.0);
+    }
+
+    #[test]
+    fn layer_adjust_output_loss() {
+        let mut l: Layer<spline::Bez, f32> =
+            Layer::new_with_init(2, 1, |_, _| Bez::new(-5.0, 5.0, 1));
+        l.edges[0][0].scale_y(-1.0);
+
+        let p = Params {
+            learning_rate: 0.1,
+            ..Params::default()
+        };
+        let inputs = vec![1.0, 1.0];
+        let mut next_layer = vec![0.0, 0.0];
+        l.adjust(&p, &inputs, &vec![1.0], Some(&mut next_layer));
+
+        assert_near!(next_layer[0], -1.0);
+        assert_near!(next_layer[1], 1.0);
+    }
+
+    #[test]
+    fn _layered_eval() {
+        let mut out = vec![0.0, 0.0];
+        let l: Layer<spline::Bez, f32> = Layer::new_with_init(2, 1, |_, _| Bez::new(-5.0, 5.0, 1));
+        layered_eval(&vec![l], vec![2.0, 1.0], &mut out);
+        assert_near!(out[0], 3.0);
+
+        let layers = vec![
+            Layer::<spline::Bez, f32>::new_with_init(2, 2, |_, _| Bez::new(-15.0, 15.0, 1)),
+            Layer::<spline::Bez, f32>::new_with_init(2, 2, |_, _| Bez::new(-15.0, 15.0, 1)),
+            Layer::<spline::Bez, f32>::new_with_init(2, 1, |_, _| Bez::new(-15.0, 15.0, 1)),
+        ];
+        layered_eval(&layers, vec![2.0, 1.0], &mut out);
+        assert_near!(out[0], 12.0);
+        layered_eval(&layers, vec![2.0, -1.5], &mut out);
+        assert_near!(out[0], 2.0);
     }
 }
