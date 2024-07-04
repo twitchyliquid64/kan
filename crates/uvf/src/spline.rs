@@ -326,6 +326,9 @@ where
     fn adjust(&mut self, params: &crate::Params, t: V, error: V) {
         Bez::adjust(self, params, t, error);
     }
+    fn scale_y(&mut self, amt: V) {
+        Bez::scale_y(self, amt);
+    }
 }
 
 impl<V> Default for Bez<V>
