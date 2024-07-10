@@ -381,4 +381,36 @@ mod tests {
         assert_near!(layered_eval(&mut layers, vec![3.0, 0.0])[0], 9.0);
         assert_near!(layered_eval(&mut layers, vec![0.0, 3.0])[0], 9.0);
     }
+
+    #[test]
+    fn layered_train_div() {
+        let p = Params {
+            learning_rate: 0.05,
+            ..Params::default()
+        };
+        let mut layers = vec![
+            Layer::new_with_init(2, 4, |_, _| Bez::new(0.0, 6.0, 3)),
+            Layer::new_with_init(4, 2, |_, _| Bez::new(0.0, 15.0, 2)),
+            Layer::new_with_init(2, 1, |_, _| Bez::new(0.0, 15.0, 1)),
+        ];
+
+        let mut rng = StdRng::seed_from_u64(11);
+        for _ in 0..20000 {
+            let input_x: f32 = rng.gen_range(1.0..=4.0);
+            let input_y: f32 = rng.gen_range(0.5..=4.0);
+            let inputs = vec![input_x, input_y];
+
+            let delta = layered_eval(&mut layers, inputs.clone())[0] - (input_x / input_y);
+
+            layered_adjust(&p, &mut layers, inputs, vec![delta]);
+        }
+
+        const TEST_TOLERANCE: f32 = 0.22;
+        assert_near!(layered_eval(&mut layers, vec![2.0, 2.0])[0], 1.0);
+        assert_near!(layered_eval(&mut layers, vec![1.0, 1.0])[0], 1.0);
+        assert_near!(layered_eval(&mut layers, vec![3.0, 2.0])[0], 1.5);
+        assert_near!(layered_eval(&mut layers, vec![2.0, 4.0])[0], 0.5);
+        assert_near!(layered_eval(&mut layers, vec![2.0, 1.0])[0], 2.0);
+        assert_near!(layered_eval(&mut layers, vec![2.0, 0.5])[0], 4.0);
+    }
 }
