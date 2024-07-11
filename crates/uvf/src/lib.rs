@@ -310,6 +310,51 @@ mod tests {
     }
 
     #[test]
+    fn layer_train_category() {
+        let mut l: Layer<spline::Bez, f32> =
+            Layer::new_with_init(1, 3, |_, _| Bez::new(-1.0, 2.0, 3));
+
+        let p = Params {
+            learning_rate: 0.2,
+            ..Params::default()
+        };
+
+        let mut rng = StdRng::seed_from_u64(11);
+        for _ in 0..1000 {
+            let input: f32 = rng.gen_range(0.0..=1.5);
+            let deltas = vec![
+                l.eval(&vec![input])[0] - (if input < 0.5 { 1.0 } else { 0.0 }),
+                l.eval(&vec![input])[1]
+                    - (if input >= 0.5 && input < 1.0 {
+                        1.0
+                    } else {
+                        0.0
+                    }),
+                l.eval(&vec![input])[2] - (if input >= 1.0 { 1.0 } else { 0.0 }),
+            ];
+            l.adjust(&p, &vec![input], &deltas, None);
+        }
+
+        const TEST_TOLERANCE: f32 = 0.2;
+        let mut test = |in_val: f32, category: usize, out_val: f32| {
+            assert_near!(l.eval(&vec![in_val])[category], out_val);
+        };
+
+        test(0.0, 0, 1.0);
+        test(0.3, 0, 1.0);
+        test(1.0, 0, 0.0);
+        test(0.7, 0, 0.0);
+        test(1.4, 0, 0.0);
+        test(0.0, 1, 0.0);
+        test(0.9, 1, 1.0);
+        test(0.3, 1, 0.0);
+        test(0.7, 1, 1.0);
+        test(1.4, 1, 0.0);
+        test(0.7, 2, 0.0);
+        test(1.4, 2, 1.0);
+    }
+
+    #[test]
     fn layer_adjust_output_loss() {
         let mut l: Layer<spline::Bez, f32> =
             Layer::new_with_init(2, 1, |_, _| Bez::new(-5.0, 5.0, 1));
@@ -413,4 +458,71 @@ mod tests {
         assert_near!(layered_eval(&mut layers, vec![2.0, 1.0])[0], 2.0);
         assert_near!(layered_eval(&mut layers, vec![2.0, 0.5])[0], 4.0);
     }
+
+    #[test]
+    fn layered_train_mul() {
+        let p = Params {
+            learning_rate: 0.034,
+            ..Params::default()
+        };
+        let mut layers = vec![
+            Layer::new_with_init(2, 2, |_, _| Bez::new(0.0, 5.0, 3)),
+            Layer::new_with_init(2, 2, |_, _| Bez::new(0.0, 25.0, 3)),
+            Layer::new_with_init(2, 1, |_, _| Bez::new(0.0, 25.0, 2)),
+        ];
+
+        let mut rng = StdRng::seed_from_u64(1);
+        for _ in 0..20000 {
+            let input_x: f32 = rng.gen_range(0.0..=5.0);
+            let input_y: f32 = rng.gen_range(0.0..=5.0);
+            let inputs = vec![input_x, input_y];
+
+            let delta = layered_eval(&mut layers, inputs.clone())[0] - (input_x * input_y);
+
+            layered_adjust(&p, &mut layers, inputs, vec![delta]);
+        }
+
+        const TEST_TOLERANCE: f32 = 0.2;
+        assert_near!(layered_eval(&mut layers, vec![2.0, 2.0])[0], 4.0);
+        assert_near!(layered_eval(&mut layers, vec![1.0, 1.0])[0], 1.0);
+        assert_near!(layered_eval(&mut layers, vec![3.0, 2.0])[0], 6.0);
+        assert_near!(layered_eval(&mut layers, vec![2.0, 4.0])[0], 8.0);
+        assert_near!(layered_eval(&mut layers, vec![2.0, 1.0])[0], 2.0);
+        assert_near!(layered_eval(&mut layers, vec![2.0, 0.5])[0], 1.0);
+        assert_near!(layered_eval(&mut layers, vec![4.0, 4.0])[0], 16.0);
+        assert_near!(layered_eval(&mut layers, vec![5.0, 5.0])[0], 25.0);
+        assert_near!(layered_eval(&mut layers, vec![1.0, 5.0])[0], 5.0);
+        assert_near!(layered_eval(&mut layers, vec![5.0, 1.0])[0], 5.0);
+    }
+
+    // #[test]
+    // fn layered_train_distance_formula() {
+    //     let p = Params {
+    //         learning_rate: 0.05,
+    //         ..Params::default()
+    //     };
+    //     let mut layers = vec![
+    //         Layer::new_with_init(4, 3, |_, _| Bez::new(0.0, 6.0, 3)),
+    //         Layer::new_with_init(3, 1, |_, _| Bez::new(0.0, 6.0, 8)),
+    //         Layer::new_with_init(1, 1, |_, _| Bez::new(-40.0, 25.0, 4)),
+    //     ];
+
+    //     let mut rng = StdRng::seed_from_u64(32);
+    //     for _ in 0..450000 {
+    //         let input_x1: f32 = rng.gen_range(1.0..=5.0);
+    //         let input_x2: f32 = rng.gen_range(1.0..=5.0);
+    //         let input_x3: f32 = rng.gen_range(1.0..=5.0);
+    //         let input_x4: f32 = rng.gen_range(1.0..=5.0);
+    //         let inputs = vec![input_x1, input_x2, input_x3, input_x4];
+
+    //         let delta = layered_eval(&mut layers, inputs.clone())[0]
+    //             - ((input_x1 - input_x2).powi(2) + (input_x3 - input_x4).powi(2)).sqrt();
+
+    //         layered_adjust(&p, &mut layers, inputs, vec![delta]);
+    //     }
+
+    //     const TEST_TOLERANCE: f32 = 0.4;
+    //     assert_near!(layered_eval(&mut layers, vec![2.0, 1.0, 2.0, 1.0])[0], 1.41);
+    //     assert_near!(layered_eval(&mut layers, vec![2.0, 0.0, 2.0, 0.0])[0], 2.82);
+    // }
 }
