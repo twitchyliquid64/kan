@@ -2,6 +2,10 @@
 
 Experiments with learnable KAN / univariate functions.
 
+The actual main code for training networks are in tests across the various packages.
+
+Status: Probably not going to work on this anymore as Bezier KANs seem to not train without residual functions.
+
 ## Ideas backlog
 
  - Some loss penality for non-convexity?
